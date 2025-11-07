@@ -256,17 +256,32 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
   <!-- Instructions Overlay -->
   <div id="instructionsOverlay">
     <div style="max-width: 600px;">
-      <h2>📱 iPhone Screen Recording Mode</h2>
-      <p style="margin-bottom: 20px;">How to record your flyby video on iPhone:</p>
+      <h2>📱 iPhone Recording Options</h2>
+      
+      <div style="background: rgba(138, 210, 255, 0.1); padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: var(--accent);">✨ Good News!</h3>
+        <p style="margin-bottom: 10px;">Your device may support <strong>direct video recording</strong>! Try clicking the regular "Record" button first. If it works and downloads a video, you don't need Screen Record Mode!</p>
+        <p style="font-size: 12px; color: #999; margin: 0;">Direct recording = better quality + easier workflow</p>
+      </div>
+
+      <h3>Option 1: Direct Recording (Try This First!)</h3>
       <ol>
-        <li><strong>Setup Screen Recording:</strong><br>Go to Settings → Control Center → Add "Screen Recording"</li>
         <li><strong>Create Your Path:</strong><br>Position camera and add checkpoints</li>
-        <li><strong>Tap the Red Button:</strong><br>The 🎥 button at bottom-right</li>
-        <li><strong>Start iOS Recording:</strong><br>Swipe down from top-right, tap record button</li>
-        <li><strong>Wait for Countdown:</strong><br>App counts down 3-2-1 and starts preview</li>
-        <li><strong>Let It Play:</strong><br>Preview plays automatically through your path</li>
-        <li><strong>Stop Recording:</strong><br>Tap red bar at top of screen → Stop</li>
-        <li><strong>Trim & Share:</strong><br>Open Photos app, trim video, upload to Instagram!</li>
+        <li><strong>Hit "Record":</strong><br>Click the regular Record button in controls</li>
+        <li><strong>Let It Play:</strong><br>Preview plays through your path</li>
+        <li><strong>Download:</strong><br>Video saves automatically to your device!</li>
+      </ol>
+
+      <h3 style="margin-top: 30px;">Option 2: iOS Screen Recording (Backup)</h3>
+      <p>If direct recording doesn't work, use this method:</p>
+      <ol>
+        <li><strong>Setup Screen Recording:</strong><br>Settings → Control Center → Add "Screen Recording"</li>
+        <li><strong>Create Your Path:</strong><br>Position camera and add checkpoints</li>
+        <li><strong>Tap Red 🎥 Button:</strong><br>The floating button at bottom-right</li>
+        <li><strong>Start iOS Recording:</strong><br>Swipe down, tap record button</li>
+        <li><strong>Wait for Countdown:</strong><br>3-2-1 and preview starts</li>
+        <li><strong>Stop Recording:</strong><br>Tap red bar at top → Stop</li>
+        <li><strong>Trim & Share:</strong><br>Photos app → trim → upload to Instagram!</li>
       </ol>
       <button id="closeInstructions" class="primary">Got It!</button>
       <p style="margin-top: 20px; font-size: 12px; color: #999;">
@@ -973,7 +988,7 @@ camera.position.set(0,0,4);
 	  controls.enablePan = true; controls.enableZoom = true; controls.enableRotate = false;
 	  controls.target = new THREE.Vector3(0,0,0);
 	  controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: null };
-	  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.PAN };
+	  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 	  controls.target.copy(focus);
 	  controls.update();
 	  setDiag('dControls', !!controls && typeof controls.update==='function', 'OrbitControls');
@@ -6814,23 +6829,7 @@ console.log('[DIMS] Script loading...');
     }, 1000);
   }
 
-  // Touch controls for camera
-  let touchState = {
-    active: false,
-    startX: 0,
-    startY: 0,
-    startDist: 0,
-    lastX: 0,
-    lastY: 0,
-    isPinch: false
-  };
-
-  function getTouchDistance(t1, t2) {
-    const dx = t2.clientX - t1.clientX;
-    const dy = t2.clientY - t1.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-
+  // Touch feedback visual (doesn't interfere with OrbitControls)
   function showTouchFeedback(x, y) {
     const feedback = document.createElement('div');
     feedback.className = 'touch-feedback';
@@ -6840,84 +6839,25 @@ console.log('[DIMS] Script loading...');
     setTimeout(() => feedback.remove(), 600);
   }
 
-  // Add touch event handlers to canvas
+  // Add non-interfering touch feedback to canvas
+  // OrbitControls handles all the actual touch interaction
   setTimeout(() => {
     const canvas = document.querySelector('canvas');
     if (!canvas) return;
 
+    // Just show visual feedback on touch, don't prevent default
+    // This lets OrbitControls handle the actual gesture
     canvas.addEventListener('touchstart', (e) => {
-      e.preventDefault();
       const touches = e.touches;
-      
       if (touches.length === 1) {
-        // Single touch - rotation
-        touchState.active = true;
-        touchState.isPinch = false;
-        touchState.startX = touchState.lastX = touches[0].clientX;
-        touchState.startY = touchState.lastY = touches[0].clientY;
         showTouchFeedback(touches[0].clientX, touches[0].clientY);
-      } else if (touches.length === 2) {
-        // Two touches - pinch to zoom
-        touchState.active = true;
-        touchState.isPinch = true;
-        touchState.startDist = getTouchDistance(touches[0], touches[1]);
       }
-    }, { passive: false });
+    }, { passive: true }); // passive: true = doesn't block OrbitControls
 
-    canvas.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-      if (!touchState.active) return;
+    console.log('[mobile] Touch controls enabled (via OrbitControls)');
+  }, 2000);
 
-      const touches = e.touches;
-
-      if (touches.length === 1 && !touchState.isPinch) {
-        // Single touch drag - simulate mouse drag for orbit
-        const deltaX = touches[0].clientX - touchState.lastX;
-        const deltaY = touches[0].clientY - touchState.lastY;
-        
-        // Simulate mousemove for OrbitControls
-        if (window.controls && controls.enabled) {
-          // Scale touch movement (touch is more sensitive)
-          const mouseEvent = new MouseEvent('mousemove', {
-            clientX: touches[0].clientX,
-            clientY: touches[0].clientY,
-            movementX: deltaX * 0.5,
-            movementY: deltaY * 0.5,
-            bubbles: true
-          });
-          canvas.dispatchEvent(mouseEvent);
-        }
-        
-        touchState.lastX = touches[0].clientX;
-        touchState.lastY = touches[0].clientY;
-      } else if (touches.length === 2 && touchState.isPinch) {
-        // Pinch to zoom
-        const currentDist = getTouchDistance(touches[0], touches[1]);
-        const delta = (currentDist - touchState.startDist) * 0.01;
-        
-        if (window.camera) {
-          // Adjust FOV for zoom
-          camera.fov = Math.max(10, Math.min(120, camera.fov - delta * 2));
-          camera.updateProjectionMatrix();
-        }
-        
-        touchState.startDist = currentDist;
-      }
-    }, { passive: false });
-
-    canvas.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      touchState.active = false;
-      touchState.isPinch = false;
-    }, { passive: false });
-
-    canvas.addEventListener('touchcancel', (e) => {
-      e.preventDefault();
-      touchState.active = false;
-      touchState.isPinch = false;
-    }, { passive: false });
-
-    console.log('[mobile] Touch controls enabled');
+  console.log('[mobile] OrbitControls native touch support active');
   }, 2000);
 
   // Screen Record Mode functionality
@@ -7068,7 +7008,7 @@ console.log('[DIMS] Script loading...');
     setTimeout(() => {
       const hint = document.createElement('div');
       hint.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(138,210,255,0.9);color:#000;padding:12px 20px;border-radius:20px;font-size:13px;z-index:999;text-align:center;max-width:80%;box-shadow:0 4px 12px rgba(0,0,0,0.2);';
-      hint.innerHTML = '💡 Tap 🎥 to enter Screen Record Mode<br><span style="font-size:11px;opacity:0.7;">Long press for instructions</span>';
+      hint.innerHTML = '💡 Try "Record" button first!<br><span style="font-size:11px;opacity:0.7;">🎥 = Screen Record Mode (backup option)</span>';
       document.body.appendChild(hint);
       setTimeout(() => {
         hint.style.transition = 'opacity 0.5s';
@@ -7110,3 +7050,4 @@ console.log('[DIMS] Script loading...');
  // console.log('[quick] collapsibles active');
 })();
 </script>
+
