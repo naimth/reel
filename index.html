@@ -2460,12 +2460,16 @@ function __wheelZoomStep(t){
 
 	if (Math.abs(__wheelZoomVel) < 0.01){
 		// Cleanup
-		if (window.__orbitLatched && !isMobileDevice) { // Don't disable controls on mobile
-		  // We stayed latched: prime the next orbit move with a fresh baseline
+		if (isMobileDevice) {
+		  // MOBILE FIX: Always ensure controls are enabled after zoom
+		  // This prevents the freeze issue on mobile devices
+		  try { if (controls) controls.enabled = true; } catch (_) {}
+		} else if (window.__orbitLatched) {
+		  // Desktop sticky orbit: keep controls disabled, update baseline
 		  try { startVec.copy(camera.position).sub(focus); } catch (_) {}
-		  // Keep controls disabled during sticky manual rotation
 		  try { if (controls) controls.enabled = false; } catch (_) {}
 		} else if (wasOnPivot) {
+		  // Desktop normal mode: full cleanup
 		  _endAndCleanupOrbit();
 		}
 
