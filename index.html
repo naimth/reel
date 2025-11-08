@@ -986,6 +986,9 @@ let __leftClickCandidate = false, __rightClickCandidate = false;
 	let targetW=1080, targetH=1920;
 	let panActive = false; // For preventing pivot updates during strafe
 
+	// MOBILE FIX: Track active touch pointers to know when all touches are released
+	const activeTouchPointers = new Set();
+
 	// --- Cinematic Path State ---
 	let isRecordingPath = false;
 	let cinematicPathCheckpoints = [];
@@ -4103,6 +4106,12 @@ window.addEventListener('keydown', ()=>{ try{ __cancelInertia(); }catch(_){ } },
 
 
 canvas.addEventListener('pointerdown', (e)=>{
+	// MOBILE FIX: Track touch pointers
+	if (e.pointerType === 'touch') {
+	  activeTouchPointers.add(e.pointerId);
+	  console.log('[mobile] Touch down, active pointers:', activeTouchPointers.size);
+	}
+	
 	const left = e.pointerType==='mouse' && e.button===0 && !e.shiftKey;
 	if (left){
 	  try{ if(e.pointerId!=null) canvas.setPointerCapture(e.pointerId); }catch(_){}
@@ -4285,6 +4294,33 @@ e.preventDefault();
 window.addEventListener('pointerup', (e) => {
 	try { if (e.pointerId != null) canvas.releasePointerCapture(e.pointerId); } catch (_) {}
   
+	// MOBILE FIX: Handle touch events that the mouse-only handler below misses
+	if (e.pointerType === 'touch') {
+	  // Remove this pointer from active set
+	  activeTouchPointers.delete(e.pointerId);
+	  console.log('[mobile] Touch released, remaining pointers:', activeTouchPointers.size);
+	  
+	  // ONLY reset when ALL touches are released (no more active touch pointers)
+	  if (activeTouchPointers.size === 0) {
+		console.log('[mobile] All touches released, resetting controls');
+		
+		// Clear any stuck states
+		try { if (panActive) panActive = false; } catch(_) {}
+		try { if (window.__orbitLatched) window.__orbitLatched = false; } catch(_) {}
+		try { if (orbitRotating) orbitRotating = false; } catch(_) {}
+		try { if (cylRotating) cylRotating = false; } catch(_) {}
+		
+		// Force OrbitControls to reset its internal state
+		if (controls) {
+		  controls.enabled = true;
+		  // Update to ensure internal state is clean
+		  controls.update();
+		}
+	  }
+	  
+	  return; // Don't run the mouse handler below
+	}
+	
 	const left = e.pointerType === 'mouse' && e.button === 0 && !e.shiftKey;
   
 	if (left) {
@@ -4400,6 +4436,21 @@ window.addEventListener('pointerup', (e) => {
 	  rightHasDragged = false;
 	}
   });
+
+// MOBILE FIX: Handle pointercancel (e.g., when system interrupts touch)
+window.addEventListener('pointercancel', (e) => {
+  if (e.pointerType === 'touch') {
+	activeTouchPointers.delete(e.pointerId);
+	console.log('[mobile] Touch cancelled, remaining pointers:', activeTouchPointers.size);
+	
+	// If all touches cancelled, reset controls
+	if (activeTouchPointers.size === 0 && controls) {
+	  console.log('[mobile] All touches cancelled, resetting controls');
+	  controls.enabled = true;
+	  controls.update();
+	}
+  }
+});
 
 function __lockPointerIfNeeded(){
 	if (!INFINITE_DRAG) return;
