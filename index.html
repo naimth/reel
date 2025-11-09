@@ -259,7 +259,7 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 
 
   </style>
-\n<style>#gl{touch-action:manipulation;}</style>\n</head>
+<style>#gl{touch-action:manipulation;}</style></head>
 <body>
   <!-- Toggle Controls Button (Mobile) -->
   <button id="toggleControlsBtn">☰ Controls</button>
@@ -5901,7 +5901,223 @@ function mirrorTextureSettings(dst, baseMap){
 	return true;
   }
 
-  function waitShaderReady(material, tries, onReady, onTimeout){
+  
+// === PATCH: Mix-first-then-rebuild crossfade for dimension changes ===
+function __mixFadeThenRebuild(index, entry, dur){
+  try {
+    const pm = gt.photoMesh;
+    const pc = gt.photoCoat;
+    if (!pm || !pm.material) { console.warn('[mixFadeThenRebuild] no photoMesh'); return; }
+    const coatWasVisible = (pc ? pc.visible : false);
+    if (pc) pc.visible = false;
+
+    ensureMixPipeline(pm.material);
+    const nextTex = (entry && entry.texture) ? entry.texture : null;
+    if (!nextTex) {
+      console.warn('[mixFadeThenRebuild] nextTex missing — doing immediate swap + rebuild');
+      try { applyTextureImmediate(pm, entry?.texture || null, pm.material.map); } catch(_){}
+      deckIndex = index;
+      try { updateImageDimensions(entry); } catch(_){}
+      try { if (typeof createOrUpdatePhotoMesh === 'function') createOrUpdatePhotoMesh(); } catch(_){}
+      if (pc && pc.material && pm.material && pm.material.map) {
+        pc.material.map = pm.material.map;
+        if ('needsUpdate' in pc.material.map) pc.material.map.needsUpdate = true;
+        pc.material.needsUpdate = true;
+      }
+      if (pc) pc.visible = coatWasVisible;
+      return;
+    }
+
+    if (!setNextTexture(pm.material, nextTex)) {
+      return waitShaderReady(pm.material, 16,
+        (sh) => __mixFadeThenRebuild(index, entry, dur),
+        () => {
+          console.warn('[mixFadeThenRebuild] shader not ready — immediate swap');
+          try { applyTextureImmediate(pm, nextTex, pm.material.map); } catch(_){}
+          deckIndex = index;
+          try { updateImageDimensions(entry); } catch(_){}
+          try { if (typeof createOrUpdatePhotoMesh === 'function') createOrUpdatePhotoMesh(); } catch(_){}
+          if (pc && pc.material && pm.material && pm.material.map) {
+            pc.material.map = pm.material.map;
+            if ('needsUpdate' in pc.material.map) pc.material.map.needsUpdate = true;
+            pc.material.needsUpdate = true;
+          }
+          if (pc) pc.visible = coatWasVisible;
+        }
+      );
+    }
+
+    const sh = pm.material.userData.shader;
+    const t0 = performance.now();
+    (function step(){
+      const t = Math.min(1, (performance.now() - t0) / (Number.isFinite(dur) ? dur : 900));
+      try { sh.uniforms.uMix.value = t; } catch(_){}
+      if (t < 1) return requestAnimationFrame(step);
+
+      try { sh.uniforms.uUseNext.value = false; } catch(_){}
+      try { applyTextureImmediate(pm, nextTex, pm.material.map); } catch(_){}
+      deckIndex = index;
+      try { updateImageDimensions(entry); } catch(_){}
+      try { if (typeof createOrUpdatePhotoMesh === 'function') createOrUpdatePhotoMesh(); } catch(_){}
+
+      if (pc && pc.material && pm.material && pm.material.map) {
+        pc.material.map = pm.material.map;
+        if ('needsUpdate' in pc.material.map) pc.material.map.needsUpdate = true;
+        pc.material.needsUpdate = true;
+      }
+      if (pc) pc.visible = coatWasVisible;
+    })();
+  } catch(e) {
+    console.warn('[mixFadeThenRebuild] error', e);
+  }
+}
+
+// ==== PATCH: Overlay group crossfade (image + frame), then swap originals ====
+function __overlayCrossfadeThenSwap(index, entry, dur){
+  const pm = gt.photoMesh;
+  const pc = gt.photoCoat;
+  if (!pm || !pm.material) { console.warn('[overlayCF] no photoMesh'); return; }
+
+  // Build nextTex as your pipeline already does by this point (entry.texture should exist)
+  const nextTex = (entry && entry.texture) ? entry.texture : null;
+  if (!nextTex) { console.warn('[overlayCF] missing next texture'); return; }
+
+  // 1) Freeze references to old originals and hide them
+  const pmOld = pm, pcOld = pc;
+  try { pmOld.visible = false; } catch(_){}
+  try { if (pcOld) pcOld.visible = false; } catch(_){}
+
+  // 2) Create outgoing duplicates (image + frame) that share maps (no clones) and keep background occluded
+  const oldGroup = new THREE.Group();
+  (function makeOldImage(){
+    const Ctor = (pmOld.material && pmOld.material.constructor) ? pmOld.material.constructor : THREE.MeshBasicMaterial;
+    const mat = new Ctor();
+    try {
+      if (pmOld.material.color && mat.color) mat.color.copy(pmOld.material.color);
+      ['metalness','roughness','side','blending','depthTest'].forEach(k=>{ if (pmOld.material[k] !== undefined) mat[k] = pmOld.material[k]; });
+      if (pmOld.material.emissive && mat.emissive) mat.emissive.copy(pmOld.material.emissive);
+      ['map','emissiveMap','normalMap','envMap','clearcoatMap','clearcoatNormalMap'].forEach(k=>{ if (pmOld.material[k]) mat[k] = pmOld.material[k]; });
+    } catch(_){}
+    mat.transparent = true;
+    mat.opacity = 1.0;
+    mat.depthWrite = true;    // keep world occluded
+    mat.depthTest  = true;
+    const mesh = new THREE.Mesh(pmOld.geometry, mat);
+    mesh.position.copy(pmOld.position);
+    mesh.quaternion.copy(pmOld.quaternion);
+    mesh.scale.copy(pmOld.scale);
+    oldGroup.add(mesh);
+  })();
+  (function makeOldFrame(){
+    if (!pcOld) return;
+    const Ctor = (pcOld.material && pcOld.material.constructor) ? pcOld.material.constructor : THREE.MeshPhysicalMaterial;
+    const mat = new Ctor();
+    try {
+      if (pcOld.material.color && mat.color) mat.color.copy(pcOld.material.color);
+      ['metalness','roughness','clearcoat','clearcoatRoughness','side','blending','depthTest'].forEach(k=>{ if (pcOld.material[k] !== undefined) mat[k] = pcOld.material[k]; });
+      if (pcOld.material.emissive && mat.emissive) mat.emissive.copy(pcOld.material.emissive);
+      ['map','emissiveMap','normalMap','envMap','clearcoatMap','clearcoatNormalMap'].forEach(k=>{ if (pcOld.material[k]) mat[k] = pcOld.material[k]; });
+    } catch(_){}
+    mat.transparent = true;
+    mat.opacity = 1.0;
+    mat.depthWrite = true;
+    mat.depthTest  = true;
+    const mesh = new THREE.Mesh(pcOld.geometry, mat);
+    mesh.position.copy(pcOld.position);
+    mesh.quaternion.copy(pcOld.quaternion);
+    mesh.scale.copy(pcOld.scale);
+    oldGroup.add(mesh);
+  })();
+  oldGroup.renderOrder = (pmOld.renderOrder || 0) + 5;
+  gt.scene.add(oldGroup);
+
+  // 3) Build the new originals (geometry for new dimensions)
+  //    We temporarily set gt.photoMesh to old to keep API stable, then rebuild.
+  let pmNew, pcNew;
+  try {
+    updateImageDimensions(entry);
+    if (typeof createOrUpdatePhotoMesh === 'function') createOrUpdatePhotoMesh();
+    pmNew = gt.photoMesh;
+    pcNew = gt.photoCoat;
+    if (pmNew) pmNew.visible = false;
+    if (pcNew) pcNew.visible = false;
+  } catch(e){
+    console.warn('[overlayCF] rebuild error, falling back to immediate swap', e);
+    try { pmOld.material.map = nextTex; pmOld.material.needsUpdate = true; } catch(_){}
+    return;
+  }
+
+  // 4) Create incoming duplicates (image + frame) reusing new maps; draw on top (no depth test) and fade them in
+  const inGroup = new THREE.Group();
+  (function makeNewImage(){
+    const Ctor = (pmNew.material && pmNew.material.constructor) ? pmNew.material.constructor : THREE.MeshBasicMaterial;
+    const mat = new Ctor();
+    try {
+      if (pmNew.material.color && mat.color) mat.color.copy(pmNew.material.color);
+      ['metalness','roughness','side','blending'].forEach(k=>{ if (pmNew.material[k] !== undefined) mat[k] = pmNew.material[k]; });
+      if (pmNew.material.emissive && mat.emissive) mat.emissive.copy(pmNew.material.emissive);
+      ['map','emissiveMap','normalMap','envMap','clearcoatMap','clearcoatNormalMap'].forEach(k=>{ if (pmNew.material[k]) mat[k] = pmNew.material[k]; });
+    } catch(_){}
+    mat.transparent = true;
+    mat.opacity = 0.0;
+    mat.depthWrite = false;
+    mat.depthTest  = false;   // always overlay
+    const mesh = new THREE.Mesh(pmNew.geometry, mat);
+    mesh.position.copy(pmNew.position);
+    mesh.quaternion.copy(pmNew.quaternion);
+    mesh.scale.copy(pmNew.scale);
+    inGroup.add(mesh);
+  })();
+  (function makeNewFrame(){
+    if (!pcNew) return;
+    const Ctor = (pcNew.material && pcNew.material.constructor) ? pcNew.material.constructor : THREE.MeshPhysicalMaterial;
+    const mat = new Ctor();
+    try {
+      if (pcNew.material.color && mat.color) mat.color.copy(pcNew.material.color);
+      ['metalness','roughness','clearcoat','clearcoatRoughness','side','blending'].forEach(k=>{ if (pcNew.material[k] !== undefined) mat[k] = pcNew.material[k]; });
+      if (pcNew.material.emissive && mat.emissive) mat.emissive.copy(pcNew.material.emissive);
+      ['map','emissiveMap','normalMap','envMap','clearcoatMap','clearcoatNormalMap'].forEach(k=>{ if (pcNew.material[k]) mat[k] = pcNew.material[k]; });
+    } catch(_){}
+    mat.transparent = true;
+    mat.opacity = 0.0;
+    mat.depthWrite = false;
+    mat.depthTest  = false;
+    const mesh = new THREE.Mesh(pcNew.geometry, mat);
+    mesh.position.copy(pcNew.position);
+    mesh.quaternion.copy(pcNew.quaternion);
+    mesh.scale.copy(pcNew.scale);
+    inGroup.add(mesh);
+  })();
+  inGroup.renderOrder = oldGroup.renderOrder + 1;
+  gt.scene.add(inGroup);
+
+  // 5) Crossfade both groups
+  const start = performance.now();
+  const D = Number.isFinite(dur) ? dur : 900;
+  (function step(){
+    const t = Math.min(1, (performance.now() - start) / D);
+    for (const obj of oldGroup.children) {
+      if (obj.material) { obj.material.opacity = 1 - t; obj.material.needsUpdate = true; }
+    }
+    for (const obj of inGroup.children) {
+      if (obj.material) { obj.material.opacity = t; obj.material.needsUpdate = true; }
+    }
+    if (t < 1) return requestAnimationFrame(step);
+
+    // 6) Commit: show new originals, remove duplicates, update deckIndex
+    try { deckIndex = index; } catch(_){}
+    try { if (pmNew) pmNew.visible = true; } catch(_){}
+    try { if (pcNew) pcNew.visible = true; } catch(_){}
+    try { gt.scene.remove(oldGroup); } catch(_){}
+    try { gt.scene.remove(inGroup); } catch(_){}
+    try {
+      oldGroup.traverse(n => n.material && n.material.dispose && n.material.dispose());
+      inGroup.traverse(n => n.material && n.material.dispose && n.material.dispose());
+    } catch(_){}
+  })();
+}
+
+function waitShaderReady(material, tries, onReady, onTimeout){
 	let n = tries || 12;
 	(function tick(){
 	  const sh = material.userData && material.userData.shader;
@@ -6458,6 +6674,18 @@ console.log('[DIMS] Script loading...');
 	  }
 	  
 	  console.log('[DIMS] *** REBUILDING MESH FOR NEW DIMENSIONS ***');
+// >>> PATCH: hide coat during REBUILD fade (prevents occluding old image atop new fade)
+let __coatWasVisible = false, __coatPrevOpacity = 1;
+try {
+  const pc = gt.photoCoat;
+  if (pc) {
+    __coatWasVisible = pc.visible;
+    if (pc.material && typeof pc.material.opacity === 'number') __coatPrevOpacity = pc.material.opacity;
+    pc.visible = false; // critical: no occlusion during fade
+  }
+} catch(_) {}
+// <<< PATCH end
+
 	  
 	  const pm = gt.photoMesh;
 	  const pc = gt.photoCoat;
@@ -6469,31 +6697,75 @@ console.log('[DIMS] Script loading...');
 	  const dur = Number.isFinite(durOverride) 
 		? durOverride 
 		: (parseFloat(document.getElementById('fadeMs')?.value || '900') || 900);
+// >>> PATCH: schedule coat restore/map sync after REBUILD fade duration
+try {
+  setTimeout(() => {
+    try {
+      const pc = gt.photoCoat;
+      const pm = gt.photoMesh;
+      if (pc && pc.material && pm && pm.material && pm.material.map) {
+        pc.material.map = pm.material.map;
+        if ('needsUpdate' in pc.material.map) pc.material.map.needsUpdate = true;
+        pc.material.needsUpdate = true;
+      }
+      if (pc) {
+        pc.visible = __coatWasVisible;
+        if (pc.material && typeof __coatPrevOpacity === 'number') pc.material.opacity = __coatPrevOpacity;
+      }
+    } catch(_){}
+  }, Math.max(0, (typeof dur === 'number' ? dur : 900) + 20));
+} catch(_) {}
+// <<< PATCH end
+
 	  
 	  console.log('[DIMS] Fade duration:', dur);
 	  
 	  const halfDur = dur / 2;
 	  
-	  // Clone old meshes to keep them visible during fade
+	  
+	  // === PATCH: use non-cloning duplicates and hide originals ===
+	  try { if (pm) pm.visible = false; } catch(_){}
+	  try { if (pc) pc.visible = false; } catch(_){}
+	  
 	  const oldMeshes = [];
 	  if (pm) {
-		const oldMesh = pm.clone();
-		oldMesh.material = pm.material.clone();
-		oldMesh.material.transparent = true;
-		oldMesh.material.opacity = 1.0;
-		gt.scene.add(oldMesh);
-		oldMeshes.push(oldMesh);
+	    const OldMatCtor = (pm.material && pm.material.constructor) ? pm.material.constructor : THREE.MeshBasicMaterial;
+	    const oldMat = new OldMatCtor();
+	    try {
+	      if (pm.material.color && oldMat.color) oldMat.color.copy(pm.material.color);
+	      ['metalness','roughness','side','blending','depthTest'].forEach(k=>{ if (pm.material[k] !== undefined) oldMat[k] = pm.material[k]; });
+	      if (pm.material.emissive && oldMat.emissive) oldMat.emissive.copy(pm.material.emissive);
+	      ['map','emissiveMap','normalMap','envMap','clearcoatMap','clearcoatNormalMap'].forEach(k=>{ if (pm.material[k]) oldMat[k] = pm.material[k]; });
+	    } catch(_){}
+	    oldMat.transparent = true;
+	    oldMat.opacity = 1.0;
+	    oldMat.depthWrite = false;
+	    const oldMesh = new THREE.Mesh(pm.geometry, oldMat);
+	    try { oldMesh.position.copy(pm.position); oldMesh.quaternion.copy(pm.quaternion); oldMesh.scale.copy(pm.scale); } catch(_){}
+	    try { oldMesh.renderOrder = (pm.renderOrder || 0) - 1; } catch(_){}
+	    gt.scene.add(oldMesh);
+	    oldMeshes.push(oldMesh);
 	  }
 	  if (pc) {
-		const oldCoat = pc.clone();
-		oldCoat.material = pc.material.clone();
-		oldCoat.material.transparent = true;
-		oldCoat.material.opacity = 1.0;
-		gt.scene.add(oldCoat);
-		oldMeshes.push(oldCoat);
+	    const CoatCtor = (pc.material && pc.material.constructor) ? pc.material.constructor : THREE.MeshPhysicalMaterial;
+	    const oldCoatMat = new CoatCtor();
+	    try {
+	      if (pc.material.color && oldCoatMat.color) oldCoatMat.color.copy(pc.material.color);
+	      ['metalness','roughness','clearcoat','clearcoatRoughness','side','blending','depthTest'].forEach(k=>{ if (pc.material[k] !== undefined) oldCoatMat[k] = pc.material[k]; });
+	      if (pc.material.emissive && oldCoatMat.emissive) oldCoatMat.emissive.copy(pc.material.emissive);
+	      ['map','emissiveMap','normalMap','envMap','clearcoatMap','clearcoatNormalMap'].forEach(k=>{ if (pc.material[k]) oldCoatMat[k] = pc.material[k]; });
+	    } catch(_){}
+	    oldCoatMat.transparent = true;
+	    oldCoatMat.opacity = 1.0;
+	    oldCoatMat.depthWrite = false;
+	    const oldCoat = new THREE.Mesh(pc.geometry, oldCoatMat);
+	    try { oldCoat.position.copy(pc.position); oldCoat.quaternion.copy(pc.quaternion); oldCoat.scale.copy(pc.scale); } catch(_){}
+	    try { oldCoat.renderOrder = (pc.renderOrder || 0) - 1; } catch(_){}
+	    gt.scene.add(oldCoat);
+	    oldMeshes.push(oldCoat);
 	  }
-	  
-	  // Fade out old clones (not the real meshes)
+	  // === END PATCH ===
+// Fade out old clones (not the real meshes)
 	  const startTime1 = performance.now();
 	  function fadeOutStep() {
 		const elapsed = performance.now() - startTime1;
@@ -6895,10 +7167,13 @@ console.log('[DIMS] Script loading...');
     // CRITICAL: Prevent sticky orbit from disabling controls on mobile
     window.__orbitLatched = false;
     setInterval(() => { 
-      if (window.__orbitLatched) window.__orbitLatched = false;
-      // Also prevent panActive from getting stuck
-      if (panActive && !leftDown && !rightDown) panActive = false;
-    }, 100);
+	  if (window.__orbitLatched) window.__orbitLatched = false;
+	  if (typeof rmbLatched !== 'undefined' && rmbLatched) rmbLatched = false;      // NEW
+	  if (typeof controls !== 'undefined' && controls && controls.enabled === false) // NEW
+		controls.enabled = true;                                                     // NEW
+	  if (panActive && !leftDown && !rightDown) panActive = false;
+	}, 100);
+
     
     // CRITICAL: Disable cylindrical mode on mobile (it blocks OrbitControls!)
     setTimeout(() => {
@@ -7146,13 +7421,4 @@ console.log('[DIMS] Script loading...');
 })();</script>
 
 
-// /* MOBILE sticky kill-switch */ keep all sticky features off on touch devices (no effect on desktop)
-(function(){
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  if (!isMobile) return;
-  setInterval(() => {
-    try { if (window.__orbitLatched) window.__orbitLatched = false; } catch(_) {}
-    try { if (typeof rmbLatched !== 'undefined' && rmbLatched) rmbLatched = false; } catch(_) {}
-    try { if (typeof controls !== 'undefined' && controls && controls.enabled === false) controls.enabled = true; } catch(_) {}
-  }, 200);
-})();
+
