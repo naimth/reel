@@ -335,10 +335,11 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
     <!-- Mini Path Builder -->
     <div class="row" style="gap:8px;flex-wrap:wrap">
       <button id="qcPathRecord" class="primary">Start Building Path</button>
+      <button id="qcSpeedRamp" style="display:none; background:linear-gradient(135deg,#2a1a30,#1a1a26); border-color:#4a2b5a;">Speedramp Start</button>
       <button id="qcPathFinish" class="good" disabled>Finish Path</button>
       <button id="qcPathClear" class="warn" disabled>Clear Path</button>
     </div>
-    <div class="small" style="text-align:right">Checkpoints: <span id="qcCheckpointCount">0</span></div>
+    <div class="small" style="text-align:right">Checkpoints: <span id="qcCheckpointCount">0</span> <span id="qcSpeedRampIndicator" style="display:none; color:var(--accent2);">🎬</span></div>
 
     <!-- Image Deck -->
     <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px">
@@ -458,12 +459,20 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 	  <h3>Cinematic Path Builder</h3>
 	  <div class="stack">
 		<div class="small">Create a custom camera path by adding checkpoints. Manually position the camera, then click "Add Checkpoint".</div>
+		<div class="small" style="margin-top:8px; padding:8px; background:rgba(138,210,255,0.1); border-radius:6px;">
+		  <strong>How it works:</strong><br>
+		  • Equal time per segment (base behavior)<br>
+		  • Distance scaling: slower when close, faster when far<br>
+		  • Use Speedramp buttons for dramatic slow→fast→slow zones<br>
+		  • Butter Smoothing adds gimbal-like polish
+		</div>
 		<div class="row" style="gap:8px; flex-wrap:wrap">
 			<button id="pathRecordBtn" class="primary">Start Building Path</button>
+			<button id="speedRampBtn" style="display:none; background:linear-gradient(135deg,#2a1a30,#1a1a26); border-color:#4a2b5a;">Speedramp Start</button>
 			<button id="pathFinishBtn" class="good" disabled>Finish Path</button>
 			<button id="pathClearBtn" class="warn" disabled>Clear Path</button>
 		</div>
-		<div class="small" style="text-align: right;">Checkpoints: <span id="checkpointCountEl">0</span></div>
+		<div class="small" style="text-align: right;">Checkpoints: <span id="checkpointCountEl">0</span> <span id="speedRampIndicator" style="display:none; color:var(--accent2);">🎬 Recording speedramp...</span></div>
 		<label>Path Smoothing
 		  <span>
 			<input type="range" id="pathTension" min="0" max="1" step="0.05" value="1">
@@ -475,7 +484,7 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 		<!-- NEW: Checkpoint Speed Ramping Controls -->
 		<hr style="border-color:#2a2a35; margin: 8px 0;">
 		<label class="row">
-		  <span><input type="checkbox" id="rampCheckpoints" checked> Ease at Checkpoints</span>
+		  <span><input type="checkbox" id="rampCheckpoints"> Ease at Checkpoints</span>
 		</label>
 
 		<label>Image Fade (ms)
@@ -536,8 +545,8 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 		  <span class="small">Adjusts speed with distance</span>
 		</label>
 		<label>Distance Speed Power<span>
-			<input type="range" id="speedScalePower" min="0.02" max="1.0" step="0.01" value="0.50">
-			<input type="number" id="speedScalePowerN" min="0.02" max="1.0" step="0.01" value="0.50">
+			<input type="range" id="speedScalePower" min="0.02" max="1.0" step="0.01" value="1.0">
+			<input type="number" id="speedScalePowerN" min="0.02" max="1.0" step="0.01" value="1.0">
 		  </span>
 		</label>
 	  </div>
@@ -938,6 +947,8 @@ zoomStepN.addEventListener('input', ()=> zoomStep.value = zoomStepN.value); } }c
 	const pathFinishBtn = document.getElementById('pathFinishBtn');
 	const pathClearBtn = document.getElementById('pathClearBtn');
 	const checkpointCountEl = document.getElementById('checkpointCountEl');
+	const speedRampBtn = document.getElementById('speedRampBtn');
+	const speedRampIndicator = document.getElementById('speedRampIndicator');
 	const customPathOption = pathSel.querySelector('option[value="customPath"]');
 	const pathProgressDisplay = document.getElementById('pathProgressDisplay');
 	const pathTension = document.getElementById('pathTension');
@@ -989,10 +1000,55 @@ let __leftClickCandidate = false, __rightClickCandidate = false;
 	// --- Cinematic Path State ---
 	let isRecordingPath = false;
 	let cinematicPathCheckpoints = [];
+	let isRecordingSpeedRamp = false; // true after clicking "Speedramp Start", waiting for "Speedramp End"
+	
+	// NEW: Timing tracking variables
+	let pathRecordingStartTime = 0;
+	let lastCheckpointTime = 0;
+	
 	let pathOffsetCurve = null;
 	let pathFocusCurve = null;
 	let pathFovCurve = null;
 	let pathTimeMap = null;
+
+	// Calculate minimum viable duration based on path content
+	function calculateMinimumDuration() {
+		if (!cinematicPathCheckpoints || cinematicPathCheckpoints.length < 2) return 2;
+		
+		let minDuration = 0;
+		
+		// Add 2s for fade in, 2s for fade out
+		minDuration += 4;
+		
+		// Add time for each checkpoint transition (minimum 0.5s per transition)
+		minDuration += (cinematicPathCheckpoints.length - 1) * 0.5;
+		
+		// Add pause time for photo transitions
+		cinematicPathCheckpoints.forEach(cp => {
+			if (cp.isPause) {
+				minDuration += (cp.pauseDuration || 0) / 1000;
+			}
+		});
+		
+		return Math.max(2, Math.ceil(minDuration));
+	}
+
+	// Update duration UI constraints
+	function updateDurationConstraints() {
+		const minDur = calculateMinimumDuration();
+		const durationEl = document.getElementById('duration');
+		const durationN = document.getElementById('durationN');
+		if (durationEl) {
+			durationEl.min = minDur;
+			if (parseFloat(durationEl.value) < minDur) {
+				durationEl.value = minDur;
+				if (durationN) durationN.value = minDur;
+			}
+		}
+		if (durationN) {
+			durationN.min = minDur;
+		}
+	}
 
 	// CRITICAL FIX: Make isMobileDevice global so it's accessible everywhere (especially in __wheelZoomStep)
 	const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -2202,6 +2258,73 @@ try { window.createOrUpdatePhotoMesh = createOrUpdatePhotoMesh; } catch(_){}
 	const Easings={ constant:t=>t, easeIn:t=>t*t*(1.5-t), easeOut:t=>1-Math.pow(1-t,2), easeInOut:t=>0.5*(1-Math.cos(Math.PI*t)) };
 	let playing=false, startTime=0, durationMs=30000;
 	let phi0=0, r0=2, elev0=0;
+	
+	// Pre-playback state for custom paths (to restore after preview)
+	let __prePlaybackState = null;
+	
+	function __savePrePlaybackState() {
+		const cameraWorldPos = new THREE.Vector3();
+		camera.getWorldPosition(cameraWorldPos);
+		__prePlaybackState = {
+			cameraPos: cameraWorldPos.clone(),
+			focus: focus.clone(),
+			fov: camera.fov,
+			deckIdx: globalThis.deckIndex || 0
+		};
+	}
+	
+	function __restorePrePlaybackState() {
+		if (!__prePlaybackState) return;
+		
+		// Restore camera position relative to focus
+		focus.copy(__prePlaybackState.focus);
+		pivot.position.copy(focus);
+		
+		const offset = __prePlaybackState.cameraPos.clone().sub(focus);
+		camera.position.copy(offset); // Position relative to pivot
+		camera.fov = __prePlaybackState.fov;
+		camera.updateProjectionMatrix();
+		camera.lookAt(new THREE.Vector3(0, 0, 0)); // Look at pivot origin (which is at focus)
+		
+		// Sync OrbitControls
+		const t = safeTarget();
+		if (t) t.copy(focus);
+		if (controls) controls.update();
+		
+		// Restore deck index if needed (use crossfadeTo with 0ms for instant switch)
+		if (typeof globalThis.__deck_crossfadeTo === 'function' && __prePlaybackState.deckIdx !== globalThis.deckIndex) {
+			globalThis.__deck_crossfadeTo(__prePlaybackState.deckIdx, 0);
+		}
+		
+		__prePlaybackState = null;
+	}
+	
+	function __applyEndOfPathState() {
+		// Set camera to the final position of the path
+		if (!cinematicPathCheckpoints || cinematicPathCheckpoints.length < 1) return;
+		
+		const lastCp = cinematicPathCheckpoints[cinematicPathCheckpoints.length - 1];
+		
+		focus.copy(lastCp.focus);
+		pivot.position.copy(focus);
+		
+		camera.position.copy(lastCp.offset); // Position relative to pivot
+		camera.fov = lastCp.fov;
+		camera.updateProjectionMatrix();
+		camera.lookAt(new THREE.Vector3(0, 0, 0));
+		
+		// Sync OrbitControls
+		const t = safeTarget();
+		if (t) t.copy(focus);
+		if (controls) controls.update();
+		
+		// Set deck to final image (use crossfadeTo with 0ms for instant switch)
+		if (typeof globalThis.__deck_crossfadeTo === 'function' && lastCp.deckIdx !== globalThis.deckIndex) {
+			globalThis.__deck_crossfadeTo(lastCp.deckIdx, 0);
+		}
+		
+		__prePlaybackState = null;
+	}
 	function capturePreviewAnchor(){
 	  const c = cylFromCamera();
 	  phi0 = c.phi; r0 = c.r; elev0 = c.elev;
@@ -2654,80 +2777,127 @@ canvas.addEventListener('wheel', (e)=>{
 	if(playing){
 	const elapsedTime = performance.now() - startTime;
 	const isFinished = elapsedTime >= durationMs;
-	const linearTime = isFinished ? 1.0 : elapsedTime / durationMs;
-	// --- Fade in/out controller (2s each) ---
-	if (fadeUniform && !globalThis.__crossfadeActive){ 
-	  const fadeMs = 2000;
+	
+	// --- Fade in/out controller (2s each) - ONLY during recording ---
+	// During preview: skip fade, show full image immediately
+	// During recording: apply fade in/out for final video
+	const isActuallyRecording = recorder && recorder.state === 'recording';
+	const fadeMs = 2000; // 2 second fade duration
+	
+	// Calculate fade alpha
+	let __fadeAlpha = 1.0;
+	if (isActuallyRecording) {
 	  const fin = Math.min(1, Math.max(0, elapsedTime / fadeMs));
 	  const fout = Math.min(1, Math.max(0, (durationMs - elapsedTime) / fadeMs));
-	  fadeUniform.value = Math.min(fin, fout);
-	  const __fadeAlpha = fadeUniform.value;
+	  __fadeAlpha = Math.min(fin, fout);
+	}
+	
+	// Calculate motion time - during recording, motion only happens AFTER fade-in completes
+	// and stops BEFORE fade-out begins
+	let linearTime;
+	if (isActuallyRecording) {
+	  // Effective motion duration = total - fadeIn - fadeOut
+	  const motionDuration = durationMs - (fadeMs * 2);
+	  const motionStart = fadeMs;
+	  const motionEnd = durationMs - fadeMs;
+	  
+	  if (elapsedTime < motionStart) {
+	    // During fade-in: hold at start position
+	    linearTime = 0;
+	  } else if (elapsedTime > motionEnd) {
+	    // During fade-out: hold at end position
+	    linearTime = 1;
+	  } else {
+	    // During motion: map elapsed time to 0-1
+	    linearTime = (elapsedTime - motionStart) / motionDuration;
+	  }
+	} else {
+	  // Preview: normal linear time (no hold periods)
+	  linearTime = isFinished ? 1.0 : elapsedTime / durationMs;
+	}
+	
+	// Apply fade to uniforms and materials
+	if (fadeUniform && !globalThis.__crossfadeActive) {
+	  fadeUniform.value = __fadeAlpha;
+	  
+	  // Fade photo mesh
 	  if (photoMesh && photoMesh.material){
-		if (!photoMesh.material.transparent) { photoMesh.material.transparent = true; photoMesh.material.needsUpdate = true; }
-		photoMesh.material.opacity = __fadeAlpha;
+	    if (!photoMesh.material.transparent) { photoMesh.material.transparent = true; photoMesh.material.needsUpdate = true; }
+	    photoMesh.material.opacity = __fadeAlpha;
 	  }
 	  if (photoCoat && photoCoat.material){
-		if (!photoCoat.material.transparent) { photoCoat.material.transparent = true; photoCoat.material.needsUpdate = true; }
-		photoCoat.material.opacity = __fadeAlpha;
+	    if (!photoCoat.material.transparent) { photoCoat.material.transparent = true; photoCoat.material.needsUpdate = true; }
+	    photoCoat.material.opacity = __fadeAlpha;
 	  }
-
+	  
+	  // Fade the sun/star light source - this ensures true black at fade boundaries
+	  const flareStar = scene.getObjectByName('flareStar');
+	  if (flareStar && flareStar.material) {
+	    if (!flareStar.material.transparent) { flareStar.material.transparent = true; flareStar.material.needsUpdate = true; }
+	    flareStar.material.opacity = __fadeAlpha;
+	  }
+	  if (flareLight) {
+	    // Also dim the actual light intensity
+	    flareLight.intensity = 2.5 * __fadeAlpha;
+	  }
 	}
 	
 
-	if (pathSel.value === 'customPath' && pathOffsetCurve) {
+	if (pathSel.value === 'customPath' && cinematicPathCheckpoints && cinematicPathCheckpoints.length >= 2) {
+		// ============================================
+		// UNIFIED PLAYBACK SYSTEM
+		// ============================================
+		// All path playback goes through getUnifiedPathPose() which handles:
+		// - Timing-based segment progression
+		// - Speedramp zones with extreme easing
+		// - Per-segment smoothing
+		// Then butter smoothing is applied for final gimbal-like polish
+		
 		const ease = Easings[easeSel.value] ?? Easings.easeInOut;
 		const easedTime = ease(linearTime);
 		
-		// NEW: Use the combined progress calculation function
-		const pathProgress = getCustomPathProgress(easedTime);
-
-            
-	// Checkpoint-driven deck switching (no time)
-	{ const cps = (typeof cinematicPathCheckpoints!=='undefined') ? cinematicPathCheckpoints : null;
-	  if (cps && cps.length) {
-	    const N = cps.length;
-	    let seg = Math.floor(pathProgress * (N-1) + 1e-6);
-	    if (seg < 0) seg = 0; if (seg > N-1) seg = N-1;
-	    const cp = cps[seg];
-	    const want = (cp && Number.isInteger(cp.deckIdx)) ? cp.deckIdx : -1;
-	    const fadeMs = (cp && Number.isFinite(cp.deckFadeMs)) ? cp.deckFadeMs : 600;
-	    const st = (globalThis.__deckByCheckpoint || (globalThis.__deckByCheckpoint = { seg:-1, idx:-1 }));
-	    if (want >= 0 && want !== st.idx && globalThis.__deck_crossfadeTo) {
-	      globalThis.__deck_crossfadeTo(want, fadeMs);
-	      st.idx = want; st.seg = seg;
-	    }
-	  }
-	}
-// Choose per-DOF easing sampler (minimum-jerk) vs curve sampling
-            let newFocusPos, newOffset, newFov;
-            const useEase = (typeof rampCheckpoints!=='undefined' && rampCheckpoints && rampCheckpoints.checked);
-            if (useEase) {
-              const easeStrength = __easeStrengthFromUI();
-              (() => { const __r = sampleCustomPathAt(pathProgress, easeStrength); newFocusPos = __r.focus; newOffset = __r.offset; newFov = __r.fov; })();
-            } else {
-              newFocusPos = pathFocusCurve.getPointAt(pathProgress);
-              newOffset = pathOffsetCurve.getPointAt(pathProgress);
-              const fovPoint = pathFovCurve.getPointAt(pathProgress);
-              newFov = fovPoint.y;
-            }
-
-		// The final camera position is the sum of the focus position and its offset.
-		// Use .clone() to prevent modifying the newFocusPos vector in place.
+		// Get the raw pose from unified system
+		const rawPose = getUnifiedPathPose(easedTime);
+		
+		// Apply butter smoothing for gimbal-like motion
+		let finalPose = rawPose;
+		if (typeof applyButterSmoothing === 'function') {
+			finalPose = applyButterSmoothing(rawPose.offset, rawPose.focus, rawPose.fov, easedTime);
+			// Preserve deck info from raw pose
+			finalPose.deckIdx = rawPose.deckIdx;
+			finalPose.deckFadeMs = rawPose.deckFadeMs;
+		}
+		
+		// Handle deck switching
+		const want = finalPose.deckIdx;
+		const fadeMs = finalPose.deckFadeMs || 600;
+		const st = (globalThis.__deckByCheckpoint || (globalThis.__deckByCheckpoint = { idx: -1 }));
+		if (want >= 0 && want !== st.idx && globalThis.__deck_crossfadeTo) {
+			globalThis.__deck_crossfadeTo(want, fadeMs);
+			st.idx = want;
+		}
+		
+		// Apply final camera pose
+		const newFocusPos = finalPose.focus;
+		const newOffset = finalPose.offset;
+		const newFov = finalPose.fov;
+		
 		camera.position.copy(newFocusPos.clone().add(newOffset));
-		focus.copy(newFocusPos); // Update the global focus for other systems if needed.
+		focus.copy(newFocusPos);
 		camera.fov = newFov;
 		camera.updateProjectionMatrix();
-		camera.up.set(0,1,0);
+		camera.up.set(0, 1, 0);
 		camera.lookAt(newFocusPos);
 		
 		const t = safeTarget();
-		if(t) t.copy(newFocusPos);
-
+		if (t) t.copy(newFocusPos);
+		
+		// Update progress display
 		if (pathProgressDisplay && cinematicPathCheckpoints.length > 0) {
-			 const pointCount = cinematicPathCheckpoints.length;
-			 const currentPoint = Math.floor(pathProgress * (pointCount - 1)) + 1;
-			 pathProgressDisplay.textContent = `Playback: Checkpoint ${Math.min(pointCount, currentPoint)} / ${pointCount}`;
+			const pct = Math.round(easedTime * 100);
+			pathProgressDisplay.textContent = `Playback: ${pct}%`;
 		}
+		
 	} else {
 		const desired = computeCameraPose(linearTime);
 		applyRig(desired.phi, desired.r, desired.elev, desired.fov);
@@ -2819,11 +2989,15 @@ canvas.addEventListener('wheel', (e)=>{
 	if (_starfield) { _hidden.push(_starfield); _starfield.visible = false; }
 
 	// Hide back/sides so they DON'T occlude (they would fill the whole screen)
-	if (typeof backMesh !== 'undefined' && backMesh && backMesh.visible) { _hidden.push(backMesh); backMesh.visible = false; }
-	if (typeof sidesMesh !== 'undefined' && sidesMesh && sidesMesh.visible) { _hidden.push(sidesMesh); sidesMesh.visible = false; }
+	// Store their original visibility state
+	const backMeshWasVisible = (typeof backMesh !== 'undefined' && backMesh) ? backMesh.visible : false;
+	const sidesMeshWasVisible = (typeof sidesMesh !== 'undefined' && sidesMesh) ? sidesMesh.visible : false;
+	if (backMesh) backMesh.visible = false;
+	if (sidesMesh) sidesMesh.visible = false;
 
 	// Ensure photo mesh is visible for silhouette
-	if (typeof photoMesh !== 'undefined' && photoMesh && !photoMesh.visible) { _hidden.push({ref:photoMesh, restore:true}); photoMesh.visible = true; }
+	const photoMeshWasVisible = (typeof photoMesh !== 'undefined' && photoMesh) ? photoMesh.visible : true;
+	if (photoMesh) photoMesh.visible = true;
 
 	renderer.setRenderTarget(depthMaskRT);
 	renderer.setClearColor(0x000000, 1);
@@ -2833,13 +3007,20 @@ canvas.addEventListener('wheel', (e)=>{
 	camera.layers.set(BASE_LAYER);
 	renderer.render(scene, camera);
 
-	// restore
+	// restore everything
 	camera.layers.mask = prevMask2;
 	scene.overrideMaterial = prevOverride2;
 	renderer.setRenderTarget(currentTarget2);
+	
+	// Restore sprite visibility
 	for (const o of _hidden) {
-	  if (o && o.ref && o.restore) { o.ref.visible = false; } else if (o) { o.visible = true; }
+	  if (o) o.visible = true;
 	}
+	
+	// Always restore frame visibility (fixes bug where frame disappears permanently)
+	if (backMesh) backMesh.visible = true;
+	if (sidesMesh) sidesMesh.visible = true;
+	if (photoMesh) photoMesh.visible = photoMeshWasVisible;
   }
 
 
@@ -2888,9 +3069,33 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 		pathProgressDisplay.style.display = 'none';
 	}
 
+	// Restore full visibility after playback ends
+	if (fadeUniform) fadeUniform.value = 1.0;
+	if (photoMesh && photoMesh.material) {
+		photoMesh.material.opacity = 1.0;
+		photoMesh.material.needsUpdate = true;
+	}
+	if (photoCoat && photoCoat.material) {
+		photoCoat.material.opacity = 1.0;
+		photoCoat.material.needsUpdate = true;
+	}
+	// Restore sun/star visibility
+	const flareStar = scene.getObjectByName('flareStar');
+	if (flareStar && flareStar.material) {
+		flareStar.material.opacity = 1.0;
+		flareStar.material.needsUpdate = true;
+	}
+	if (flareLight) flareLight.intensity = 2.5; // Restore original intensity
+
 	// After any kind of playback, re-attach the camera to the pivot
 	// to restore normal manual control functionality.
 	pivot.attach(camera);
+
+	// For custom paths: restore camera to pre-playback position
+	// This returns user to where they were before pressing Preview
+	if (__prePlaybackState) {
+		__restorePrePlaybackState();
+	}
 
 	if(controls){
 		controls.enabled=true;
@@ -2912,6 +3117,10 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	if (pathProgressDisplay) {
 		pathProgressDisplay.style.display = 'block';
 	}
+
+	// Save current camera state BEFORE detaching from pivot
+	// This allows us to restore position after preview ends
+	__savePrePlaybackState();
 
 	// De-parent from pivot to allow setting world positions directly during playback.
 	// This makes playback independent of the camera's state before clicking Preview.
@@ -2949,23 +3158,30 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	  }
 
 	  
-	// Start on checkpoint[0] image
+	// Start on checkpoint[0] image - use instant (0ms) switch so image is ready immediately
 	{ const cps = (typeof cinematicPathCheckpoints!=='undefined') ? cinematicPathCheckpoints : null;
 	  if (cps && cps.length) {
 	    const cp0 = cps[0];
 	    const idx0 = (cp0 && Number.isInteger(cp0.deckIdx)) ? cp0.deckIdx : -1;
-	    const fade0 = (cp0 && Number.isFinite(cp0.deckFadeMs)) ? cp0.deckFadeMs : 0;
+	    // Always use 0ms for initial image - we want it ready before playback starts
 	    if (idx0 >= 0 && globalThis.__deck_crossfadeTo) {
-	      globalThis.__deck_crossfadeTo(idx0, fade0);
+	      globalThis.__deck_crossfadeTo(idx0, 0); // Instant switch
 	      globalThis.__deckByCheckpoint = { seg:0, idx: idx0 };
 	    } else {
 	      globalThis.__deckByCheckpoint = { seg:-1, idx:-1 };
 	    }
 	  }
 	}
-playing=true; 
-	  startTime=performance.now(); 
-	  if(controls){ controls.enablePan=false; controls.enabled=false; } 
+	
+	// Ensure image is fully rendered before starting playback timer
+	// This prevents the "fade in" appearance at the start of preview
+	requestAnimationFrame(() => {
+	  requestAnimationFrame(() => {
+	    playing=true; 
+	    startTime=performance.now(); 
+	    if(controls){ controls.enablePan=false; controls.enabled=false; }
+	  });
+	});
 	}
 	previewBtn.addEventListener('click', startPreview);
 
@@ -2984,13 +3200,52 @@ playing=true;
 	  renderer.setSize(Math.round(w*scale), Math.round(h*scale), false);
 	  if (bloomComposer) bloomComposer.setSize(Math.round(w*scale), Math.round(h*scale));
 	  if (finalComposer) finalComposer.setSize(Math.round(w*scale), Math.round(h*scale));
+	  
+	  // IMPORTANT: Set everything to black BEFORE starting the recorder
+	  // This ensures the very first frame is pure black
+	  if (fadeUniform) fadeUniform.value = 0;
+	  if (photoMesh && photoMesh.material) {
+	    photoMesh.material.transparent = true;
+	    photoMesh.material.opacity = 0;
+	    photoMesh.material.needsUpdate = true;
+	  }
+	  if (photoCoat && photoCoat.material) {
+	    photoCoat.material.transparent = true;
+	    photoCoat.material.opacity = 0;
+	    photoCoat.material.needsUpdate = true;
+	  }
+	  // Hide the sun/star too
+	  const flareStar = scene.getObjectByName('flareStar');
+	  if (flareStar && flareStar.material) {
+	    flareStar.material.transparent = true;
+	    flareStar.material.opacity = 0;
+	    flareStar.material.needsUpdate = true;
+	  }
+	  if (flareLight) flareLight.intensity = 0;
+	  
+	  // Render a black frame first
+	  if (finalComposer) {
+	    finalComposer.render();
+	  } else {
+	    renderer.render(scene, camera);
+	  }
+	  
 	  const stream = canvas.captureStream(fps);
 	  const types=[  'video/mp4;codecs="avc1.42E01E"',  'video/mp4;codecs="avc1.4D401E"',  'video/mp4;codecs="avc1.64001E"',  'video/webm;codecs=h264',  'video/webm;codecs=vp9',  'video/webm;codecs=vp8',  'video/webm']; let mime='';for(const m of types){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)){ mime=m; break; } }
 	  if(!window.MediaRecorder){ alert('MediaRecorder not supported in this browser.'); return; }
 	  recorder=new MediaRecorder(stream,{ mimeType:mime||undefined, videoBitsPerSecond:12_000_000 }); recordedChunks=[];
 	  recorder.ondataavailable=(e)=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
-	  recorder.onstop=saveRecording; recorder.start(); overlay.style.display='flex'; if(controls){ controls.enabled=false; }
-	  startPreview();
+	  recorder.onstop=saveRecording; 
+	  recorder.start(); 
+	  overlay.style.display='flex'; 
+	  if(controls){ controls.enabled=false; }
+	  
+	  // Wait a couple frames to ensure black frame is captured, then start playback
+	  requestAnimationFrame(() => {
+	    requestAnimationFrame(() => {
+	      startPreview();
+	    });
+	  });
 	}
 	function stopRecording(){ 
 	try{ recorder?.stop(); }catch(e){ console.warn(e); } 
@@ -3271,6 +3526,205 @@ function __featheredProgress(u, baseAlpha, sharp){
   return denom > 1e-6 ? (S / denom) : u;
 }
 
+// --- SPEEDRAMP: Ultra-smooth S-curve for speed ramped sections ---
+// Uses a 7th-order (septic) smoothstep which has:
+// - Zero velocity at start and end
+// - Zero acceleration at start and end  
+// - Zero jerk at start and end
+// This creates the "maximum feathered" effect the user requested
+function __septicSmoothstep(u) {
+  u = Math.min(Math.max(u, 0), 1);
+  // 7th order smoothstep: -20u^7 + 70u^6 - 84u^5 + 35u^4
+  const u2 = u * u;
+  const u3 = u2 * u;
+  const u4 = u3 * u;
+  return u4 * (35 - 84*u + 70*u2 - 20*u3);
+}
+
+// Even smoother: 9th-order (nonic) smoothstep for absolute butter
+function __nonicSmoothstep(u) {
+  u = Math.min(Math.max(u, 0), 1);
+  // 9th order: 252u^5 - 1050u^6 + 1800u^7 - 1575u^8 + 560u^9
+  const u2 = u * u;
+  const u3 = u2 * u;
+  const u4 = u3 * u;
+  const u5 = u4 * u;
+  return u5 * (252 - 1050*u + 1800*u2 - 1575*u3 + 560*u4);
+}
+
+// EXTREME speedramp: Power-based S-curve with dramatic speed differential
+// At endpoints: velocity approaches zero (camera crawls/stops)
+// At midpoint: velocity is `power` times faster than average (camera ZIPS)
+// power=7 means midpoint is 7x faster than linear, endpoints nearly stopped
+function __extremeSpeedRamp(u, power = 7) {
+  u = Math.min(Math.max(u, 0), 1);
+  if (u < 0.5) {
+    // First half: slow start, accelerating
+    return 0.5 * Math.pow(2 * u, power);
+  } else {
+    // Second half: decelerating to slow end
+    return 1 - 0.5 * Math.pow(2 * (1 - u), power);
+  }
+}
+
+// CINEMATIC SPEEDRAMP: Exponential-style curve for classic slow-BLAST-slow feel
+// - First 25% of time: creeps through ~3% of distance (dramatic slow start)
+// - Middle 50% of time: blasts through ~94% of distance (exponential acceleration)
+// - Last 25% of time: creeps through ~3% of distance (dramatic slow landing)
+// This gives the "hold... hold... WHOOSH... hold" feel of pro speedramps
+function __cinematicSpeedRamp(u) {
+  u = Math.min(Math.max(u, 0), 1);
+  
+  // Use a combination of exponential and power curves for maximum drama
+  // The key insight: we want VERY flat slopes at the endpoints and VERY steep in middle
+  
+  // Attempt 1: Super-high power (15) gives ~32x speed differential
+  // But blend with exponential for smoother acceleration feel
+  const power = 15;
+  
+  let powerResult;
+  if (u < 0.5) {
+    powerResult = 0.5 * Math.pow(2 * u, power);
+  } else {
+    powerResult = 1 - 0.5 * Math.pow(2 * (1 - u), power);
+  }
+  
+  // Exponential component: exp-based ease for natural acceleration feel
+  // Maps 0->0, 0.5->0.5, 1->1 with exponential character
+  const k = 8; // steepness
+  let expResult;
+  if (u < 0.5) {
+    expResult = 0.5 * (Math.exp(k * (2*u - 1)) - Math.exp(-k)) / (1 - Math.exp(-k));
+  } else {
+    const v = 1 - u;
+    expResult = 1 - 0.5 * (Math.exp(k * (2*v - 1)) - Math.exp(-k)) / (1 - Math.exp(-k));
+  }
+  
+  // Blend: 70% power curve (for the dramatic hold at endpoints) + 30% exponential (for smooth accel)
+  const result = powerResult * 0.7 + expResult * 0.3;
+  
+  return Math.max(0, Math.min(1, result));
+}
+
+// Even more extreme: combines power ease with additional smoothstep blend
+// for buttery smooth acceleration/deceleration curves
+function __ultraSpeedRamp(u, power = 8) {
+  u = Math.min(Math.max(u, 0), 1);
+  if (!isFinite(u)) return 0.5;
+  
+  // Base power ease
+  let base;
+  if (u < 0.5) {
+    base = 0.5 * Math.pow(2 * u, power);
+  } else {
+    base = 1 - 0.5 * Math.pow(2 * (1 - u), power);
+  }
+  // Blend with nonic for extra smoothness at the very tips
+  const blend = 0.15; // 15% nonic blend
+  const nonic = __nonicSmoothstep(u);
+  const result = base * (1 - blend) + nonic * blend;
+  return isFinite(result) ? Math.max(0, Math.min(1, result)) : u;
+}
+
+// Find speedramp zones in checkpoint array
+// Returns array of {startIdx, endIdx} objects
+function __findSpeedRampZones(cps) {
+  if (!cps || cps.length < 2) return [];
+  const zones = [];
+  let currentStart = -1;
+  
+  for (let i = 0; i < cps.length; i++) {
+    const cp = cps[i];
+    if (cp.speedRamp === 'start') {
+      currentStart = i;
+    } else if (cp.speedRamp === 'end' && currentStart >= 0) {
+      zones.push({ startIdx: currentStart, endIdx: i });
+      currentStart = -1;
+    }
+  }
+  return zones;
+}
+
+// Check if a global progress value falls within a speedramp zone
+// Returns { inZone: bool, localProgress: 0-1, zone: {startIdx, endIdx} }
+function __getSpeedRampContext(globalProgress, cps) {
+  if (!cps || cps.length < 2) return { inZone: false };
+  
+  const zones = __findSpeedRampZones(cps);
+  const n = cps.length - 1;
+  
+  for (const zone of zones) {
+    const zoneStartProgress = zone.startIdx / n;
+    const zoneEndProgress = zone.endIdx / n;
+    
+    // Skip zones where start equals end (would cause division by zero)
+    if (zoneEndProgress <= zoneStartProgress) continue;
+    
+    if (globalProgress >= zoneStartProgress && globalProgress <= zoneEndProgress) {
+      const localProgress = (globalProgress - zoneStartProgress) / (zoneEndProgress - zoneStartProgress);
+      return { inZone: true, localProgress: Math.max(0, Math.min(1, localProgress)), zone, zoneStartProgress, zoneEndProgress };
+    }
+  }
+  return { inZone: false };
+}
+
+// Apply speedramp easing to remap global progress within a zone
+function __applySpeedRampEasing(globalProgress, cps) {
+  // Safety check input
+  if (!isFinite(globalProgress)) return 0;
+  globalProgress = Math.max(0, Math.min(1, globalProgress));
+  
+  const ctx = __getSpeedRampContext(globalProgress, cps);
+  if (!ctx.inZone) return globalProgress;
+  
+  // Power=4 gives ~4x speed at midpoint, smooth transitions at boundaries
+  // This creates a noticeable speed ramp without discontinuities
+  const easedLocal = __extremeSpeedRamp(ctx.localProgress, 4);
+  
+  // Map back to global progress space and clamp for safety
+  const result = ctx.zoneStartProgress + easedLocal * (ctx.zoneEndProgress - ctx.zoneStartProgress);
+  return Math.max(0, Math.min(1, result));
+}
+
+// Debug version that returns extra info
+function __applySpeedRampEasingDebug(globalProgress, cps) {
+  // Safety check input
+  if (!isFinite(globalProgress)) return { progress: 0, debug: { error: 'NaN input' } };
+  globalProgress = Math.max(0, Math.min(1, globalProgress));
+  
+  const ctx = __getSpeedRampContext(globalProgress, cps);
+  if (!ctx.inZone) {
+    return { 
+      progress: globalProgress, 
+      debug: { inZone: false, pathProgress: globalProgress.toFixed(4) } 
+    };
+  }
+  
+  // Use power=4 for a noticeable but continuous effect
+  // Power=4 gives ~4x speed at midpoint vs endpoints
+  // Higher powers (10, 20) cause discontinuities at zone boundaries
+  const power = 4;
+  const easedLocal = __extremeSpeedRamp(ctx.localProgress, power);
+  
+  // Map back to global progress space and clamp for safety
+  const result = ctx.zoneStartProgress + easedLocal * (ctx.zoneEndProgress - ctx.zoneStartProgress);
+  const clampedResult = Math.max(0, Math.min(1, result));
+  
+  return { 
+    progress: clampedResult, 
+    debug: { 
+      inZone: true,
+      power: power,
+      pathProgress: globalProgress.toFixed(4),
+      localProgress: ctx.localProgress.toFixed(4),
+      easedLocal: easedLocal.toFixed(6),
+      rampedProgress: clampedResult.toFixed(4),
+      zoneStart: ctx.zoneStartProgress.toFixed(4),
+      zoneEnd: ctx.zoneEndProgress.toFixed(4)
+    } 
+  };
+}
+
 // --- Quaternion helpers for spherical C¹ smoothing (SQUAD) of offset direction ---
 function __qFromDir(dir){
   const z = new THREE.Vector3(0,0,1);
@@ -3403,6 +3857,9 @@ function sampleCustomPathAt(globalProgress, easeStrength){
     const fov = (fovPt && typeof fovPt.y === 'number') ? fovPt.y : 50;
     return { focus, offset, fov };
   }
+
+  // Note: Speedramp easing is now applied in the main animation loop BEFORE
+  // calling this function, so globalProgress is already ramped if applicable.
 
   // Map global progress into a segment index and local parameter u in [0,1].
   const n = cps.length - 1;
@@ -3569,9 +4026,319 @@ function sampleCustomPathAt(globalProgress, easeStrength){
 
 }
 
-// We no longer warp per-checkpoint time; easing happens per-DOF in sampling.
-function getCustomPathProgress(easedTime) {
-  return getScaledProgress(easedTime);
+// ============================================
+// UNIFIED PATH PLAYBACK SYSTEM
+// ============================================
+// 
+// Architecture:
+// 1. Equal base time per MOVEMENT segment (pause/transition segments get minimal time)
+// 2. Distance-based speed scaling WITHIN each segment (slower when close, faster when far)
+// 3. Speedramps override everything in designated zones
+// 4. Velocity-preserving easing: camera passes through exact positions with zero velocity at checkpoints
+// 5. Butter smoothing (applied later) adds final gimbal polish
+//
+// NOTE: Recording timing is NOT used - we don't want setup time
+// to affect playback speed!
+// ============================================
+
+// Precompute segment weights for time allocation
+// Movement segments get weight 1.0, pause/transition segments get weight ~0 
+function __computeSegmentWeights(cps) {
+  if (!cps || cps.length < 2) return null;
+  
+  const weights = [];
+  const PAUSE_WEIGHT = 0.01; // Minimal time for pause segments
+  const MIN_DISTANCE = 0.001; // Threshold for "same position"
+  
+  for (let i = 0; i < cps.length - 1; i++) {
+    const cp0 = cps[i];
+    const cp1 = cps[i + 1];
+    
+    // Check if this is a "same position" segment (photo transition)
+    const offsetDist = cp0.offset.distanceTo(cp1.offset);
+    const focusDist = cp0.focus.distanceTo(cp1.focus);
+    const fovDiff = Math.abs(cp0.fov - cp1.fov);
+    
+    const isStationary = offsetDist < MIN_DISTANCE && focusDist < MIN_DISTANCE && fovDiff < 0.1;
+    const isPauseSegment = cp1.isPause || cp0.isPause;
+    
+    if (isStationary || isPauseSegment) {
+      weights.push(PAUSE_WEIGHT);
+    } else {
+      weights.push(1.0);
+    }
+  }
+  
+  return weights;
+}
+
+// Get cumulative weighted time for each checkpoint index
+// Returns array where result[i] = weighted time position of checkpoint i (0 to 1)
+function __getCheckpointWeightedTimes(cps) {
+  const weights = __computeSegmentWeights(cps);
+  if (!weights || weights.length === 0) return null;
+  
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
+  if (totalWeight <= 0) return null;
+  
+  const times = [0]; // Checkpoint 0 is at time 0
+  let cumulative = 0;
+  
+  for (let i = 0; i < weights.length; i++) {
+    cumulative += weights[i];
+    times.push(cumulative / totalWeight);
+  }
+  
+  return times;
+}
+
+// Convert video progress to segment progress using weighted time allocation
+function __getWeightedSegmentProgress(videoProgress, cps) {
+  const weights = __computeSegmentWeights(cps);
+  if (!weights || weights.length === 0) return { segmentIdx: 0, localProgress: 0 };
+  
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
+  if (totalWeight <= 0) return { segmentIdx: 0, localProgress: videoProgress };
+  
+  // Find which segment we're in based on weighted time
+  let accumulatedWeight = 0;
+  const targetWeight = videoProgress * totalWeight;
+  
+  for (let i = 0; i < weights.length; i++) {
+    const segmentStart = accumulatedWeight;
+    const segmentEnd = accumulatedWeight + weights[i];
+    
+    if (targetWeight <= segmentEnd || i === weights.length - 1) {
+      // We're in this segment
+      const segmentWeight = weights[i];
+      const localProgress = segmentWeight > 0.0001 
+        ? (targetWeight - segmentStart) / segmentWeight 
+        : 1.0;
+      
+      return {
+        segmentIdx: i,
+        localProgress: Math.max(0, Math.min(1, localProgress))
+      };
+    }
+    
+    accumulatedWeight = segmentEnd;
+  }
+  
+  return { segmentIdx: weights.length - 1, localProgress: 1 };
+}
+
+function getUnifiedPathPose(videoProgress) {
+  const cps = cinematicPathCheckpoints;
+  
+  // Fallback for empty/invalid paths
+  if (!cps || cps.length < 2) {
+    return { 
+      offset: new THREE.Vector3(0, 0, 5), 
+      focus: new THREE.Vector3(0, 0, 0), 
+      fov: 50, 
+      deckIdx: 0, 
+      deckFadeMs: 600 
+    };
+  }
+
+  // Clamp input
+  videoProgress = Math.max(0, Math.min(1, videoProgress));
+
+  const numSegments = cps.length - 1;
+  
+  // ---- STEP 1: Check for speedramp zones using WEIGHTED time boundaries ----
+  const speedRampZones = __findSpeedRampZones(cps);
+  const checkpointTimes = __getCheckpointWeightedTimes(cps);
+  
+  let inSpeedRamp = false;
+  let speedRampZone = null;
+  let zoneLocalProgress = 0;
+  
+  // Check each speedramp zone using weighted time boundaries
+  if (checkpointTimes) {
+    for (const zone of speedRampZones) {
+      const zoneStart = checkpointTimes[zone.startIdx];
+      const zoneEnd = checkpointTimes[zone.endIdx];
+      
+      if (videoProgress >= zoneStart && videoProgress <= zoneEnd && zoneEnd > zoneStart) {
+        inSpeedRamp = true;
+        speedRampZone = zone;
+        zoneLocalProgress = (videoProgress - zoneStart) / (zoneEnd - zoneStart);
+        break;
+      }
+    }
+  }
+
+  // ---- STEP 2: Calculate segment and local progress ----
+  let cp0, cp1, t;
+  
+  if (inSpeedRamp && speedRampZone) {
+    // SPEEDRAMP MODE: Interpolate directly between zone endpoints
+    cp0 = cps[speedRampZone.startIdx];
+    cp1 = cps[speedRampZone.endIdx];
+    
+    // Use cinematic speedramp for dramatic slow-BLAST-slow effect
+    t = __cinematicSpeedRamp(zoneLocalProgress);
+    
+  } else {
+    // NORMAL MODE: Use weighted time allocation (movement segments get more time)
+    const { segmentIdx, localProgress } = __getWeightedSegmentProgress(videoProgress, cps);
+    
+    cp0 = cps[segmentIdx];
+    cp1 = cps[Math.min(segmentIdx + 1, cps.length - 1)];
+    
+    let adjustedProgress = localProgress;
+    
+    // Handle pause checkpoints - quick transition, mostly for deck change
+    if (cp1.isPause) {
+      // For pause segments, just do a quick linear pass-through
+      // The weighted system already gives this minimal time
+      t = localProgress;
+      
+      // Trigger deck change at midpoint
+      const deckIdx = localProgress < 0.5 ? (cp0.deckIdx ?? 0) : (cp1.deckIdx ?? 0);
+      const deckFadeMs = cp1.deckFadeMs || 600;
+      
+      return {
+        offset: cp0.offset.clone(),
+        focus: cp0.focus.clone(),
+        fov: cp0.fov,
+        deckIdx,
+        deckFadeMs
+      };
+    }
+    
+    // ---- Apply distance-based speed scaling WITHIN this segment ----
+    if (document.getElementById('enableSpeedScale')?.checked) {
+      adjustedProgress = __applyPerSegmentDistanceScaling(cp0, cp1, adjustedProgress);
+    }
+    
+    // ---- Apply velocity-preserving easing ----
+    // This ensures camera passes through exact checkpoint positions
+    // but with velocity smoothly approaching zero at each checkpoint (sine wave pattern)
+    if (document.getElementById('rampCheckpoints')?.checked) {
+      adjustedProgress = __velocityZeroEasing(adjustedProgress);
+    }
+    
+    t = adjustedProgress;
+  }
+  
+  // Clamp t for safety
+  t = Math.max(0, Math.min(1, t));
+  
+  // ---- STEP 3: Interpolate pose ----
+  const offset = new THREE.Vector3().lerpVectors(cp0.offset, cp1.offset, t);
+  const focus = new THREE.Vector3().lerpVectors(cp0.focus, cp1.focus, t);
+  const fov = THREE.MathUtils.lerp(cp0.fov, cp1.fov, t);
+  
+  // Deck index switches at midpoint of transition
+  const deckIdx = t < 0.5 ? (cp0.deckIdx ?? 0) : (cp1.deckIdx ?? 0);
+  const deckFadeMs = t < 0.5 ? (cp0.deckFadeMs || 600) : (cp1.deckFadeMs || 600);
+
+  return { offset, focus, fov, deckIdx, deckFadeMs };
+}
+
+// Velocity-preserving easing using sine curve
+// - Position at t=0 maps to exactly 0
+// - Position at t=1 maps to exactly 1
+// - Velocity at t=0 = 0 (smooth start)
+// - Velocity at t=1 = 0 (smooth stop)
+// This is like the top/bottom of a sine wave - velocity touches zero before changing direction
+function __velocityZeroEasing(t) {
+  // Base: (1 - cos(πt)) / 2
+  // This is the classic "ease in-out sine" - smooth start AND smooth stop
+  // Derivative: (π/2) * sin(πt), which is 0 at t=0 and t=1
+  
+  // Get the strength from UI (default: moderate easing)
+  const power = parseFloat(document.getElementById('rampPower')?.value || 50) / 50;
+  
+  // Sine-based ease (always has zero velocity at endpoints)
+  const sineEased = (1 - Math.cos(Math.PI * t)) / 2;
+  
+  // Blend between linear and sine-eased based on power
+  // power=0: linear (no easing)
+  // power=1: full sine easing
+  // power>1: apply sine multiple times for even more dramatic slowdown at endpoints
+  
+  if (power <= 1) {
+    return t * (1 - power) + sineEased * power;
+  } else {
+    // For power > 1, apply sine easing multiple times
+    // Each application makes the endpoints even slower
+    let result = t;
+    const iterations = Math.min(Math.floor(power), 4); // Cap at 4 iterations
+    const remainder = power - iterations;
+    
+    for (let i = 0; i < iterations; i++) {
+      result = (1 - Math.cos(Math.PI * result)) / 2;
+    }
+    
+    // Blend in partial iteration
+    if (remainder > 0) {
+      const nextIter = (1 - Math.cos(Math.PI * result)) / 2;
+      result = result * (1 - remainder) + nextIter * remainder;
+    }
+    
+    return result;
+  }
+}
+
+// Apply distance-based speed scaling within a single segment
+// Returns adjusted local progress (0-1) that spends more time when close, less when far
+// 
+// This uses a closed-form analytical solution instead of discrete sampling.
+// For linear distance interpolation d(p) = d0 + p*(d1-d0) and speed = d^power:
+// - Integrating 1/speed gives cumulative time as a function of progress
+// - Inverting this gives progress as a function of time (what we need)
+//
+// The math:
+// For power ≠ 1: p = [(t*(d1^(1-power) - d0^(1-power)) + d0^(1-power))^(1/(1-power)) - d0] / (d1-d0)
+// For power = 1: p = d0 * [(d1/d0)^t - 1] / (d1-d0)
+//
+function __applyPerSegmentDistanceScaling(cp0, cp1, linearTime) {
+  const power = parseFloat(document.getElementById('speedScalePower')?.value || 0.5);
+  
+  // Get start and end distances to focus
+  const d0 = Math.max(0.01, cp0.offset.length()); // Clamp to avoid division by zero
+  const d1 = Math.max(0.01, cp1.offset.length());
+  
+  // If distances are nearly identical, no scaling needed
+  const dDelta = d1 - d0;
+  if (Math.abs(dDelta) < 0.001) {
+    return linearTime;
+  }
+  
+  // Clamp time to valid range
+  const t = Math.max(0, Math.min(1, linearTime));
+  
+  // Handle power ≈ 1 separately (logarithmic case)
+  if (Math.abs(power - 1) < 0.01) {
+    // p = d0 * [(d1/d0)^t - 1] / (d1 - d0)
+    const ratio = d1 / d0;
+    const p = d0 * (Math.pow(ratio, t) - 1) / dDelta;
+    return Math.max(0, Math.min(1, p));
+  }
+  
+  // General case: power ≠ 1
+  // p = [(t*(d1^(1-power) - d0^(1-power)) + d0^(1-power))^(1/(1-power)) - d0] / (d1-d0)
+  const exp = 1 - power;
+  const d0Exp = Math.pow(d0, exp);
+  const d1Exp = Math.pow(d1, exp);
+  
+  // Interpolate in the transformed space
+  const blended = t * (d1Exp - d0Exp) + d0Exp;
+  
+  // Transform back and solve for p
+  const invExp = 1 / exp;
+  const dAtProgress = Math.pow(Math.max(0.0001, blended), invExp);
+  const p = (dAtProgress - d0) / dDelta;
+  
+  return Math.max(0, Math.min(1, p));
+}
+
+// Legacy alias for compatibility
+function getCustomPathProgress(globalProgress) {
+  return getUnifiedPathPose(globalProgress);
 }
 				enableSpeedScale.addEventListener('change', precomputeSpeedAdjustedPath);
 	speedScalePower.addEventListener('input', precomputeSpeedAdjustedPath);
@@ -3582,24 +4349,108 @@ function getCustomPathProgress(easedTime) {
 	checkpointCountEl.textContent = cinematicPathCheckpoints.length;
 	pathFinishBtn.disabled = cinematicPathCheckpoints.length < 2;
 	pathClearBtn.disabled = cinematicPathCheckpoints.length === 0;
+	
+	// Show/hide speedramp button based on recording state
+	if (isRecordingPath) {
+		speedRampBtn.style.display = '';
+		// Update speedramp button state
+		if (isRecordingSpeedRamp) {
+			speedRampBtn.textContent = 'Speedramp End';
+			speedRampBtn.style.background = 'linear-gradient(135deg,#3a2040,#2a1a30)';
+			speedRampBtn.style.borderColor = '#6a3b7a';
+			speedRampIndicator.style.display = '';
+			pathRecordBtn.disabled = true;
+			pathRecordBtn.style.opacity = '0.5';
+		} else {
+			speedRampBtn.textContent = 'Speedramp Start';
+			speedRampBtn.style.background = 'linear-gradient(135deg,#2a1a30,#1a1a26)';
+			speedRampBtn.style.borderColor = '#4a2b5a';
+			speedRampIndicator.style.display = 'none';
+			pathRecordBtn.disabled = false;
+			pathRecordBtn.style.opacity = '1';
+		}
+	} else {
+		speedRampBtn.style.display = 'none';
+		speedRampIndicator.style.display = 'none';
+		pathRecordBtn.disabled = false;
+		pathRecordBtn.style.opacity = '1';
+	}
 	}
 
 	pathRecordBtn.addEventListener('click', () => {
 	if (!isRecordingPath) {
-		// Start new path
+		// Starting path recording
 		isRecordingPath = true;
 		cinematicPathCheckpoints = [];
+		
+		// NEW: Initialize timing
+		pathRecordingStartTime = performance.now();
+		lastCheckpointTime = pathRecordingStartTime;
+		
 		pathRecordBtn.textContent = 'Add Checkpoint';
 		pathRecordBtn.classList.remove('primary');
 		pathRecordBtn.classList.add('good');
+		pathFinishBtn.disabled = false;
 		pathClearBtn.disabled = false;
+		if (speedRampBtn) speedRampBtn.style.display = 'inline-block';
 		customPathOption.disabled = true;
 		if (pathSel.value === 'customPath') {
 			pathSel.value = 'orbit360'; 
 		}
 	}
 	
-	// Record the camera's state relative to the focus point.
+	// Always add a checkpoint when clicking (matches original behavior)
+	const now = performance.now();
+	const timeSinceStart = now - pathRecordingStartTime;
+	const timeSinceLast = now - lastCheckpointTime;
+	
+	scene.attach(camera);
+	const cameraWorldPos = new THREE.Vector3();
+	camera.getWorldPosition(cameraWorldPos);
+	const offset = cameraWorldPos.clone().sub(focus);
+	pivot.attach(camera);
+	
+	const checkpoint = {
+		offset: offset.clone(),
+		focus: focus.clone(),
+		fov: camera.fov,
+		deckIdx: (globalThis.deckIndex != null ? globalThis.deckIndex : 0),
+		deckFadeMs: parseInt(document.getElementById('deckFadeMs')?.value || 600),
+		// NEW: Timing data
+		timestamp: timeSinceStart,           // Absolute time since recording start (ms)
+		duration: timeSinceLast / 1000,      // Time since last checkpoint (seconds)
+		isPause: false                        // Regular movement checkpoint
+	};
+	
+	if (isRecordingSpeedRamp) {
+		checkpoint.speedRampEnd = true;
+		isRecordingSpeedRamp = false;
+		if (speedRampBtn) {
+			speedRampBtn.textContent = 'Speedramp Start';
+			speedRampBtn.style.background = 'linear-gradient(135deg,#2a1a30,#1a1a26)';
+		}
+		if (speedRampIndicator) speedRampIndicator.style.display = 'none';
+	}
+	
+	cinematicPathCheckpoints.push(checkpoint);
+	lastCheckpointTime = now;
+		
+	console.log(`[checkpoint] Added #${cinematicPathCheckpoints.length}:`, {
+		timeSinceStart: (timeSinceStart/1000).toFixed(2) + 's',
+		duration: checkpoint.duration.toFixed(2) + 's',
+		offset: offset.toArray().map(v => v.toFixed(2)),
+		fov: camera.fov.toFixed(1)
+	});
+	
+	updateDurationConstraints();
+	updateCheckpointUI();
+	});
+
+	// Speed Ramp button handler
+	speedRampBtn.addEventListener('click', () => {
+	if (!isRecordingPath) return;
+	
+	// Record the camera's state relative to the focus point
 	const cameraWorldPos = new THREE.Vector3();
 	camera.getWorldPosition(cameraWorldPos);
 	const offset = cameraWorldPos.clone().sub(focus);
@@ -3607,23 +4458,127 @@ function getCustomPathProgress(easedTime) {
 	const checkpoint = {
 		offset: offset,
 		focus: focus.clone(),
-		fov: camera.fov
-	,
-
+		fov: camera.fov,
 		deckIdx: (typeof globalThis.__deck_getIndex==='function' ? globalThis.__deck_getIndex() : -1),
-		deckFadeMs: (parseInt(((document.getElementById('deckFadeMs')||{}).value)) || 600)
+		deckFadeMs: (parseInt(((document.getElementById('deckFadeMs')||{}).value)) || 600),
+		speedRamp: isRecordingSpeedRamp ? 'end' : 'start'  // Mark as speedramp start or end
 	};
+	
 	cinematicPathCheckpoints.push(checkpoint);
+	
+	// Toggle speedramp recording state
+	isRecordingSpeedRamp = !isRecordingSpeedRamp;
+	
 	updateCheckpointUI();
 	});
 
+	// NEW: Automatic waypoint creation for photo transitions
+	function handlePhotoTransition(newIndex, fadeMs) {
+		if (!isRecordingPath) return;
+		
+		const now = performance.now();
+		const timeSinceStart = now - pathRecordingStartTime;
+		const timeSinceLast = now - lastCheckpointTime;
+		
+		// Get current camera state
+		const cameraWorldPos = new THREE.Vector3();
+		camera.getWorldPosition(cameraWorldPos);
+		const offset = cameraWorldPos.clone().sub(focus);
+		
+		// Create "before transition" checkpoint - current position with OLD image
+		const beforeCheckpoint = {
+			offset: offset.clone(),
+			focus: focus.clone(),
+			fov: camera.fov,
+			deckIdx: globalThis.deckIndex || 0,  // Current/old image
+			deckFadeMs: fadeMs,
+			timestamp: timeSinceStart,
+			duration: timeSinceLast / 1000,
+			isPause: false
+		};
+		cinematicPathCheckpoints.push(beforeCheckpoint);
+		
+		// Create "after transition" checkpoint - same position with NEW image
+		// The weighted segment system detects same-position segments and gives minimal time
+		// Deck index switches at midpoint, triggering the crossfade
+		const afterCheckpoint = {
+			offset: offset.clone(),
+			focus: focus.clone(),
+			fov: camera.fov,
+			deckIdx: newIndex,  // New image
+			deckFadeMs: fadeMs,
+			timestamp: timeSinceStart,
+			duration: 0,
+			isPause: false
+		};
+		cinematicPathCheckpoints.push(afterCheckpoint);
+		
+		lastCheckpointTime = now;
+		
+		console.log(`[transition] Added 2 waypoints for image transition to ${newIndex}`);
+		updateDurationConstraints();
+		updateCheckpointUI();
+	}
+
+	// Hook into the deck transition buttons
+	const hookPhotoTransitions = () => {
+		const qcNext = document.getElementById('qcNextImg');
+		const qcPrev = document.getElementById('qcPrevImg');
+		
+		if (qcNext && !qcNext.__pathHooked) {
+			const origHandler = qcNext.onclick;
+			qcNext.onclick = function(e) {
+				if (isRecordingPath && globalThis.deck && globalThis.deck.length > 1) {
+					const currentIdx = globalThis.deckIndex || 0;
+					const newIdx = (currentIdx + 1) % globalThis.deck.length;
+					const fadeMs = parseInt(document.getElementById('deckFadeMs')?.value || 600);
+					handlePhotoTransition(newIdx, fadeMs);
+				}
+				if (origHandler) origHandler.call(this, e);
+			};
+			qcNext.__pathHooked = true;
+		}
+		
+		if (qcPrev && !qcPrev.__pathHooked) {
+			const origHandler = qcPrev.onclick;
+			qcPrev.onclick = function(e) {
+				if (isRecordingPath && globalThis.deck && globalThis.deck.length > 1) {
+					const currentIdx = globalThis.deckIndex || 0;
+					const newIdx = (currentIdx - 1 + globalThis.deck.length) % globalThis.deck.length;
+					const fadeMs = parseInt(document.getElementById('deckFadeMs')?.value || 600);
+					handlePhotoTransition(newIdx, fadeMs);
+				}
+				if (origHandler) origHandler.call(this, e);
+			};
+			qcPrev.__pathHooked = true;
+		}
+	};
+
+	// Install hooks after a delay
+	setTimeout(hookPhotoTransitions, 1000);
+
 	pathFinishBtn.addEventListener('click', () => {
 	isRecordingPath = false;
+	isRecordingSpeedRamp = false; // Reset speedramp state
 	pathRecordBtn.textContent = 'Start Building Path';
 	pathRecordBtn.classList.add('primary');
 	pathRecordBtn.classList.remove('good');
 	
 	buildCustomPathCurves();
+
+	// Debug: Log checkpoint info and speedramp zones
+	console.log('=== PATH FINISHED ===');
+	console.log('Checkpoints:', cinematicPathCheckpoints.length);
+	cinematicPathCheckpoints.forEach((cp, i) => {
+		console.log(`  [${i}] speedRamp: ${cp.speedRamp || 'none'}, offset: (${cp.offset.x.toFixed(2)}, ${cp.offset.y.toFixed(2)}, ${cp.offset.z.toFixed(2)})`);
+	});
+	const zones = __findSpeedRampZones(cinematicPathCheckpoints);
+	console.log('SpeedRamp Zones:', zones);
+	zones.forEach((z, i) => {
+		const n = cinematicPathCheckpoints.length - 1;
+		console.log(`  Zone ${i}: indices ${z.startIdx}-${z.endIdx}, progress ${(z.startIdx/n).toFixed(4)}-${(z.endIdx/n).toFixed(4)}`);
+	});
+	console.log('=====================');
 
 	customPathOption.disabled = false;
 	pathSel.value = 'customPath';
@@ -3642,6 +4597,7 @@ function getCustomPathProgress(easedTime) {
 
 	pathClearBtn.addEventListener('click', () => {
 	isRecordingPath = false;
+	isRecordingSpeedRamp = false; // Reset speedramp state
 	cinematicPathCheckpoints = [];
 	buildCustomPathCurves();
 
@@ -7208,6 +8164,7 @@ console.log('[DIMS] Script loading...');
 
   // Path Builder
   wireProxy('qcPathRecord','pathRecordBtn');
+  wireProxy('qcSpeedRamp','speedRampBtn');  // Speed ramp button
   wireProxy('qcPathFinish','pathFinishBtn');
   wireProxy('qcPathClear','pathClearBtn');
   // Deck
@@ -7225,16 +8182,34 @@ console.log('[DIMS] Script loading...');
     p.textContent = r.textContent;
     ['primary','good','warn'].forEach(cls=>{ if(r.classList.contains(cls)) p.classList.add(cls); else p.classList.remove(cls); });
     p.disabled = !!r.disabled;
+    p.style.opacity = r.style.opacity || '';  // Sync opacity for speedramp disabled state
   }
   function syncCount(){
     const src = $('checkpointCountEl');
     const dst = $('qcCheckpointCount');
     if (src && dst) dst.textContent = src.textContent;
   }
+  // Sync speedramp button state
+  function syncSpeedRamp(){
+    const srcBtn = $('speedRampBtn');
+    const dstBtn = $('qcSpeedRamp');
+    const srcInd = $('speedRampIndicator');
+    const dstInd = $('qcSpeedRampIndicator');
+    if (srcBtn && dstBtn) {
+      dstBtn.style.display = srcBtn.style.display;
+      dstBtn.textContent = srcBtn.textContent;
+      dstBtn.style.background = srcBtn.style.background;
+      dstBtn.style.borderColor = srcBtn.style.borderColor;
+    }
+    if (srcInd && dstInd) {
+      dstInd.style.display = srcInd.style.display;
+    }
+  }
   function fullSync(){
     syncText('qcPathRecord','pathRecordBtn');
     syncText('qcPathFinish','pathFinishBtn');
     syncText('qcPathClear','pathClearBtn');
+    syncSpeedRamp();  // Sync speedramp button
     // deck/record disabled states
     const dlen = (window.deck && Array.isArray(window.deck)) ? window.deck.length : (Array.isArray(globalThis.deck)? globalThis.deck.length : undefined);
     const disabled = (typeof dlen === 'number') ? (dlen <= 1) : false;
@@ -7244,7 +8219,7 @@ console.log('[DIMS] Script loading...');
   }
 
   const mo = new MutationObserver(fullSync);
-  const observeIds = ['pathRecordBtn','pathFinishBtn','pathClearBtn','checkpointCountEl'];
+  const observeIds = ['pathRecordBtn','pathFinishBtn','pathClearBtn','checkpointCountEl','speedRampBtn','speedRampIndicator'];
   function hook(){
     observeIds.forEach(id=>{ const el=$(id); if (el) mo.observe(el, {attributes:true, childList:true, characterData:true}); });
     fullSync();
