@@ -237,26 +237,95 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
   to { transform: scale(2); opacity: 0; }
 }
 
-/* Instructions overlay */
-#instructionsOverlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.9);
-  z-index: 10002;
+/* Mobile compact header */
+#mobileHeader {
   display: none;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-  color: white;
-  overflow-y: auto;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: var(--panel);
+  border-bottom: 1px solid #23232d;
 }
-#instructionsOverlay.active { display: flex; }
-#instructionsOverlay h2 { color: var(--accent); margin-bottom: 20px; }
-#instructionsOverlay ol { text-align: left; line-height: 1.8; max-width: 500px; }
-#instructionsOverlay li { margin-bottom: 12px; }
-#instructionsOverlay button { margin-top: 30px; padding: 14px 32px; font-size: 16px; }
-
+#mobileHeader .mh-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+#mobileHeader .mh-toggle-btn {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+#mobileHeader .mh-chev {
+  transition: transform 0.2s;
+}
+#mobileHeader.open .mh-chev {
+  transform: rotate(180deg);
+}
+#mobileHeader .mh-status {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#mobileHeader .mh-status .cp-count {
+  color: var(--accent);
+  font-weight: 600;
+}
+#mobileHeader .mh-panel {
+  display: none;
+  padding: 0 8px 8px 8px;
+}
+#mobileHeader.open .mh-panel {
+  display: block;
+}
+#mobileHeader .mh-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+#mobileHeader .mh-row:last-child {
+  margin-bottom: 0;
+}
+#mobileHeader button {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 4px;
+  font-size: 11px;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#mobileHeader button.nav-btn {
+  flex: 0 0 40px;
+  padding: 10px 8px;
+  font-size: 14px;
+}
+@media (max-width: 768px) {
+  #mobileHeader { display: block; }
+  header { display: none !important; }
+  #toggleControlsBtn { top: auto; bottom: 10px; }
+  #app { padding-top: 52px; }
+}
+@media (max-width: 400px) {
+  #mobileHeader button { font-size: 10px; padding: 8px 2px; }
+  #mobileHeader button.nav-btn { flex: 0 0 32px; }
+}
 
   </style>
 <style>#gl{touch-action:manipulation;}</style></head>
@@ -285,37 +354,33 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 
   <!-- Mobile Record Button removed - use direct recording instead -->
 
-  <!-- Instructions Overlay -->
-  <div id="instructionsOverlay">
-    <div style="max-width: 600px;">
-      <h2>📱 iPhone Recording Options</h2>
-      
-      <div style="background: rgba(138, 210, 255, 0.1); padding: 15px; border-radius: 10px; margin-bottom: 20px;">
-        <h3 style="margin-top: 0; color: var(--accent);">✨ Good News!</h3>
-        <p style="margin-bottom: 10px;">Your device may support <strong>direct video recording</strong>! Try clicking the regular "Record" button first. If it works and downloads a video, you don't need Screen Record Mode!</p>
-        <p style="font-size: 12px; color: #999; margin: 0;">Direct recording = better quality + easier workflow</p>
+  <!-- Mobile Compact Header -->
+  <div id="mobileHeader">
+    <div class="mh-toggle" onclick="document.getElementById('mobileHeader').classList.toggle('open')">
+      <button class="mh-toggle-btn" type="button">
+        <span>🎬 Path</span>
+        <span class="mh-chev">▼</span>
+      </button>
+      <div class="mh-status">
+        <span>CP: <span class="cp-count" id="mhCheckpointCount">0</span></span>
+        <span id="mhSpeedRampIndicator" style="display:none; color:var(--accent2);">🎬</span>
+        <span id="mhRecordingStatus" style="display:none; color:#f33;">● REC</span>
       </div>
-
-      <h3>Option 1: Direct Recording (Try This First!)</h3>
-      <ol>
-        <li><strong>Create Your Path:</strong><br>Position camera and add checkpoints</li>
-        <li><strong>Hit "Record":</strong><br>Click the regular Record button in controls</li>
-        <li><strong>Let It Play:</strong><br>Preview plays through your path</li>
-        <li><strong>Download:</strong><br>Video saves automatically to your device!</li>
-      </ol>
-
-      <h3 style="margin-top: 30px;">Option 2: iOS Screen Recording (Backup)</h3>
-      <p>If direct recording doesn't work, use this method:</p>
-      <ol>
-        <li><strong>Setup Screen Recording:</strong><br>Settings → Control Center → Add "Screen Recording"</li>
-        <li><strong>Create Your Path:</strong><br>Position camera and add checkpoints</li>
-        <li><strong>Tap Red 🎥 Button:</strong><br>The floating button at bottom-right</li>
-        <li><strong>Start iOS Recording:</strong><br>Swipe down, tap record button</li>
-        <li><strong>Wait for Countdown:</strong><br>3-2-1 and preview starts</li>
-        <li><strong>Stop Recording:</strong><br>Tap red bar at top → Stop</li>
-        <li><strong>Trim & Share:</strong><br>Photos app → trim → upload to Instagram!</li>
-      </ol>
-      <button id="closeInstructions" class="primary">Got It!</button>
+    </div>
+    <div class="mh-panel" onclick="event.stopPropagation()">
+      <div class="mh-row">
+        <button id="mhPathRecord" class="primary">Start Path</button>
+        <button id="mhSpeedRamp" style="display:none;">Ramp</button>
+        <button id="mhPathFinish" class="good" disabled>Finish</button>
+        <button id="mhPathClear" class="warn" disabled>Clear</button>
+      </div>
+      <div class="mh-row">
+        <button id="mhPrevImg" class="nav-btn">◀</button>
+        <button id="mhNextImg" class="nav-btn primary">▶</button>
+        <button id="mhPreview" class="primary">Preview</button>
+        <button id="mhRecord" class="good">Record</button>
+        <button id="mhStop" class="warn">Stop</button>
+      </div>
     </div>
   </div>
 
@@ -324,7 +389,6 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 	  <h1>Portrait Flyby Reel</h1>
 	  <span class="pill"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span> v1.4</span>
 	  <span class="hint">Touch viewport to move camera</span>
-	  <button id="showMobileHelp" style="margin-left:auto;padding:6px 12px;font-size:12px;background:var(--accent);color:#000;border:none;border-radius:8px;font-weight:600;">Help</button>
 	</header>
 
 	<aside id="left">
@@ -464,7 +528,7 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 		  • Equal time per segment (base behavior)<br>
 		  • Distance scaling: slower when close, faster when far<br>
 		  • Use Speedramp buttons for dramatic slow→fast→slow zones<br>
-		  • Butter Smoothing adds gimbal-like polish
+		  • Ease at Checkpoints smooths direction changes
 		</div>
 		<div class="row" style="gap:8px; flex-wrap:wrap">
 			<button id="pathRecordBtn" class="primary">Start Building Path</button>
@@ -493,34 +557,13 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 		  </span>
 		</label>
 
-		<div class="small" style="margin-top:-4px">Smoothly eases into/out of checkpoints for all motions.</div>
-		<label>Ease Strength<span>
-			<input type="range" id="rampPower" min="1.0" max="200" step="0.5" value="150">
-			<input type="number" id="rampPowerN" min="1.0" max="200" step="0.5" value="150">
+		<div class="small" style="margin-top:-4px">Smoothly decelerates into waypoints and accelerates out (velocity → 0 at corners).</div>
+		<label>Ease Exponent<span>
+			<input type="range" id="rampPower" min="1.0" max="8" step="0.1" value="2.5">
+			<input type="number" id="rampPowerN" min="1.0" max="8" step="0.1" value="2.5">
         </span>
       </label>
-      <div class="small" style="margin-top:-4px">Higher = smoother flow. Lower = more dramatic pauses at waypoints. 150+ for buttery motion.</div>
-
-      <!-- NEW: Butter Smoothing (critically-damped pose filter) -->
-      <hr style="border-color:#2a2a35; margin: 8px 0;">
-      <label class="row">
-        <span><input type="checkbox" id="butterSmooth" checked> Butter Smoothing</span>
-        <span class="small">Temporal pose filter</span>
-      </label>
-      <label>Smoothing Time (ms)
-        <span>
-          <input type="range" id="butterMs" min="0" max="2000" step="10" value="800">
-          <input type="number" id="butterMsN" min="0" max="2000" step="10" value="800">
-        </span>
-      </label>
-      <div class="small" style="margin-top:-4px">Try 800-1200ms for gimbal-smooth motion. 1500-2000ms for ultra-butter smoothness.</div>
-			
-			<!-- Extra Smoothing Pass -->
-			<label class="row">
-			  <span><input type="checkbox" id="superSmooth" checked> Triple-Pass Smoothing</span>
-			  <span class="small">Maximum butter</span>
-			</label>
-			<div class="small" style="margin-top:-4px">Applies additional smoothing passes for ultra-professional gimbal motion. May add slight lag.</div>
+      <div class="small" style="margin-top:-4px">1 = linear (no easing). Higher = more dramatic slowdown at waypoints. Try 2-3 for subtle, 5+ for dramatic.</div>
 			
 			<div class="small" style="margin-top:4px">When finished, the path will be available in the dropdown above.</div>
 	  </div>
@@ -961,10 +1004,6 @@ zoomStepN.addEventListener('input', ()=> zoomStep.value = zoomStepN.value); } }c
 
 
 	
-	const butterSmooth = document.getElementById('butterSmooth');
-	const butterMs = document.getElementById('butterMs');
-	const butterMsN = document.getElementById('butterMsN');
-	const superSmooth = document.getElementById('superSmooth');
 // --- Selective Bloom Setup ---
 	const BASE_LAYER = 0;
 	const BLOOM_LAYER = 1;
@@ -1662,8 +1701,6 @@ if (flarePass) flarePass.uniforms.uResolution.value.set(w, h);
 
 	const syncPairs=(a,b)=>{ a.addEventListener('input',()=>b.value=a.value); b.addEventListener('input',()=>a.value=b.value); };
 	[[durationEl,durationN],[yawAmp,yawAmpN],[pitchAmp,pitchAmpN],[fovMin,fovMinN],[fovMax,fovMaxN],[focusX,focusXN],[focusY,focusYN],[amb,ambN],[key,keyN],[backKey,backKeyN],[keyAng,keyAngN],[metal,metalN],[rough,roughN],[spec,specN],[photoEmis,photoEmisN],[backEmis,backEmisN],[exposure,exposureN],[thick,thickN],[minDist,minDistN],[maxDist,maxDistN],[exportScale,exportScaleN], [bloomThreshold, bloomThresholdN], [bloomStrength, bloomStrengthN], [bloomRadius, bloomRadiusN], [starburst, starburstN], [lensDirt, lensDirtN], [grDensity, grDensityN], [grDecay, grDecayN], [grWeight, grWeightN], [grExposure, grExposureN], [speedScalePower, speedScalePowerN],[zoomStep, zoomStepN], [pathTension, pathTensionN], [rampPower, rampPowerN]].forEach(([x,y])=>{ if(x&&y) syncPairs(x,y); });
-// Add Butter sync
-if (butterMs && butterMsN) { (function(a,b){ a.addEventListener('input',()=>b.value=a.value); b.addEventListener('input',()=>a.value=b.value); })(butterMs,butterMsN); }
 
 // --- Set distance limits for OrbitControls ---
 function updateControlLimits() {
@@ -2850,23 +2887,13 @@ canvas.addEventListener('wheel', (e)=>{
 		// All path playback goes through getUnifiedPathPose() which handles:
 		// - Timing-based segment progression
 		// - Speedramp zones with extreme easing
-		// - Per-segment smoothing
-		// Then butter smoothing is applied for final gimbal-like polish
+		// - Per-segment velocity easing (smooth decel/accel at waypoints)
 		
 		const ease = Easings[easeSel.value] ?? Easings.easeInOut;
 		const easedTime = ease(linearTime);
 		
-		// Get the raw pose from unified system
-		const rawPose = getUnifiedPathPose(easedTime);
-		
-		// Apply butter smoothing for gimbal-like motion
-		let finalPose = rawPose;
-		if (typeof applyButterSmoothing === 'function') {
-			finalPose = applyButterSmoothing(rawPose.offset, rawPose.focus, rawPose.fov, easedTime);
-			// Preserve deck info from raw pose
-			finalPose.deckIdx = rawPose.deckIdx;
-			finalPose.deckFadeMs = rawPose.deckFadeMs;
-		}
+		// Get the pose from unified system (includes velocity easing at checkpoints)
+		const finalPose = getUnifiedPathPose(easedTime);
 		
 		// Handle deck switching
 		const want = finalPose.deckIdx;
@@ -3921,247 +3948,8 @@ function sampleCustomPathAt(globalProgress, easeStrength){
     }
   }
 
-  // --- Butter Smoothing (critically-damped pose filter) ---
-  let outFocus = focus, outOffset = offset, outFov = fov;
-  try{
-    const bs = (typeof document!=='undefined') ? document.getElementById('butterSmooth') : null;
-    const msEl = (typeof document!=='undefined') ? document.getElementById('butterMs') : null;
-    const enabled = !!(bs && bs.checked);
-    const ms = msEl ? Math.max(0, parseFloat(msEl.value||'800')) : 800;
-    if (enabled && ms > 0) {
-      window.__butterState = window.__butterState || { 
-        has:false, lastP:-1, t:0, 
-        focus:new THREE.Vector3(), dir:new THREE.Vector3(0,0,1), rad:0, fov:0,
-        // Second-order state for velocity smoothing
-        focusVel:new THREE.Vector3(), dirVel:new THREE.Vector3(), radVel:0, fovVel:0
-      };
-      if (__butterState.lastP > globalProgress) { __butterState.has = false; } // reset on loop/restart
-      __butterState.lastP = globalProgress;
-      const now = (typeof performance!=='undefined' ? performance.now()*0.001 : Date.now()*0.001);
-      const prevT = __butterState.t || now;
-      __butterState.t = now;
-      const dt = Math.min(1/15, Math.max(0.00001, now - prevT)); // cap for stability
-      const tau = Math.max(0.001, ms / 1000);
-      
-      // Use a second-order critically damped filter for even smoother motion
-      // This smooths both position AND velocity
-      const zeta = 1.0; // critically damped
-      const omega = 1.0 / tau;
-      const k1 = zeta / (Math.PI * omega);
-      const k2 = 1.0 / ((2 * Math.PI * omega) * (2 * Math.PI * omega));
-      const k3 = zeta * omega;
-      
-      // Simplified second-order response (critically damped)
-      const alpha = Math.min(1.0, dt * omega * 2.0); // Doubled responsiveness for smoother tracking
-  
-      if (!__butterState.has) {
-        __butterState.focus.copy(focus);
-        __butterState.dir.copy(offset.clone().normalize());
-        __butterState.rad = offset.length();
-        __butterState.fov = fov;
-        __butterState.focusVel.set(0,0,0);
-        __butterState.dirVel.set(0,0,0);
-        __butterState.radVel = 0;
-        __butterState.fovVel = 0;
-        __butterState.has = true;
-      } else {
-        // Blend direction on the sphere (unit vectors) — short path
-        const a = __butterState.dir.clone().normalize();
-        let b = offset.clone().normalize();
-        let d = THREE.MathUtils.clamp(a.dot(b), -1, 1);
-        if (d < 0) { b.multiplyScalar(-1); d = -d; }
-        const th = Math.acos(d);
-        let blended;
-        if (th < 1e-5){ blended = a; }
-        else {
-          const sinT = Math.sin(th);
-          const w1 = Math.sin((1 - alpha) * th) / sinT;
-          const w2 = Math.sin(alpha * th) / sinT;
-          blended = a.multiplyScalar(w1).add(b.multiplyScalar(w2)).normalize();
-        }
-  
-        __butterState.dir.copy(blended);
-        __butterState.rad += (offset.length() - __butterState.rad) * alpha;
-        __butterState.focus.lerp(focus, alpha);
-        __butterState.fov += (fov - __butterState.fov) * alpha;
-      }
-  
-      outFocus = __butterState.focus.clone();
-      outOffset = __butterState.dir.clone().multiplyScalar(__butterState.rad);
-      outFov = __butterState.fov;
-      
-      // Triple-Pass Super Smoothing: Apply additional smoothing passes
-      const superEl = (typeof document!=='undefined') ? document.getElementById('superSmooth') : null;
-      if (superEl && superEl.checked && ms > 100) {
-        // Apply two more exponential smoothing passes with reduced time constants
-        // This creates an even smoother S-curve response
-        window.__butterState2 = window.__butterState2 || {
-          focus: outFocus.clone(), offset: outOffset.clone(), fov: outFov
-        };
-        window.__butterState3 = window.__butterState3 || {
-          focus: outFocus.clone(), offset: outOffset.clone(), fov: outFov
-        };
-        
-        // Second pass (50% of main time constant)
-        const alpha2 = Math.min(1.0, dt * omega * 1.0);
-        __butterState2.focus.lerp(outFocus, alpha2);
-        __butterState2.offset.lerp(outOffset, alpha2);
-        __butterState2.fov += (outFov - __butterState2.fov) * alpha2;
-        
-        // Third pass (33% of main time constant)  
-        const alpha3 = Math.min(1.0, dt * omega * 0.67);
-        __butterState3.focus.lerp(__butterState2.focus, alpha3);
-        __butterState3.offset.lerp(__butterState2.offset, alpha3);
-        __butterState3.fov += (__butterState2.fov - __butterState3.fov) * alpha3;
-        
-        // Use the triple-smoothed result
-        outFocus = __butterState3.focus.clone();
-        outOffset = __butterState3.offset.clone();
-        outFov = __butterState3.fov;
-      }
-    }
-  }catch(_){/* non-fatal */}
-  
-  return { focus: outFocus, offset: outOffset, fov: outFov };
+  return { focus: focus, offset: offset, fov: fov };
 
-}
-
-// ============================================
-// BUTTER SMOOTHING - Critically-damped pose filter
-// ============================================
-// This function applies gimbal-like smoothing to camera motion.
-// It uses a critically-damped spring model that smooths both
-// position and velocity for buttery smooth camera movements.
-// 
-// Called from the main animation loop AFTER getUnifiedPathPose()
-// to add final polish to camera motion.
-// ============================================
-function applyButterSmoothing(offset, focus, fov, globalProgress) {
-  // Check if butter smoothing is enabled
-  const bs = document.getElementById('butterSmooth');
-  const msEl = document.getElementById('butterMs');
-  const enabled = !!(bs && bs.checked);
-  const ms = msEl ? Math.max(0, parseFloat(msEl.value || '800')) : 800;
-  
-  // If disabled or zero time, return unchanged
-  if (!enabled || ms <= 0) {
-    return { offset: offset.clone(), focus: focus.clone(), fov };
-  }
-  
-  // Initialize or get butter state
-  window.__butterState = window.__butterState || { 
-    has: false, 
-    lastP: -1, 
-    t: 0, 
-    focus: new THREE.Vector3(), 
-    dir: new THREE.Vector3(0, 0, 1), 
-    rad: 0, 
-    fov: 0
-  };
-  
-  // Reset on loop/restart (when progress jumps backward)
-  if (__butterState.lastP > globalProgress) { 
-    __butterState.has = false; 
-  }
-  __butterState.lastP = globalProgress;
-  
-  // Calculate time delta
-  const now = performance.now() * 0.001;
-  const prevT = __butterState.t || now;
-  __butterState.t = now;
-  const dt = Math.min(1/15, Math.max(0.00001, now - prevT)); // cap for stability
-  
-  // Calculate filter parameters
-  const tau = Math.max(0.001, ms / 1000);
-  const omega = 1.0 / tau;
-  const alpha = Math.min(1.0, dt * omega * 2.0);
-  
-  let outFocus, outOffset, outFov;
-  
-  if (!__butterState.has) {
-    // First frame: initialize state
-    __butterState.focus.copy(focus);
-    __butterState.dir.copy(offset.clone().normalize());
-    __butterState.rad = offset.length();
-    __butterState.fov = fov;
-    __butterState.has = true;
-    
-    outFocus = focus.clone();
-    outOffset = offset.clone();
-    outFov = fov;
-  } else {
-    // Blend direction on the sphere (unit vectors) - short path slerp
-    const a = __butterState.dir.clone().normalize();
-    let b = offset.clone().normalize();
-    let d = THREE.MathUtils.clamp(a.dot(b), -1, 1);
-    
-    // Ensure we take the short path
-    if (d < 0) { 
-      b.multiplyScalar(-1); 
-      d = -d; 
-    }
-    
-    const th = Math.acos(d);
-    let blended;
-    if (th < 1e-5) { 
-      blended = a; 
-    } else {
-      const sinT = Math.sin(th);
-      const w1 = Math.sin((1 - alpha) * th) / sinT;
-      const w2 = Math.sin(alpha * th) / sinT;
-      blended = a.multiplyScalar(w1).add(b.multiplyScalar(w2)).normalize();
-    }
-    
-    // Update state with smoothed values
-    __butterState.dir.copy(blended);
-    __butterState.rad += (offset.length() - __butterState.rad) * alpha;
-    __butterState.focus.lerp(focus, alpha);
-    __butterState.fov += (fov - __butterState.fov) * alpha;
-    
-    outFocus = __butterState.focus.clone();
-    outOffset = __butterState.dir.clone().multiplyScalar(__butterState.rad);
-    outFov = __butterState.fov;
-  }
-  
-  // Triple-Pass Super Smoothing: Apply additional smoothing passes
-  const superEl = document.getElementById('superSmooth');
-  if (superEl && superEl.checked && ms > 100) {
-    window.__butterState2 = window.__butterState2 || {
-      focus: outFocus.clone(), offset: outOffset.clone(), fov: outFov
-    };
-    window.__butterState3 = window.__butterState3 || {
-      focus: outFocus.clone(), offset: outOffset.clone(), fov: outFov
-    };
-    
-    // Reset secondary states on loop
-    if (__butterState.lastP <= 0.01) {
-      __butterState2.focus.copy(outFocus);
-      __butterState2.offset.copy(outOffset);
-      __butterState2.fov = outFov;
-      __butterState3.focus.copy(outFocus);
-      __butterState3.offset.copy(outOffset);
-      __butterState3.fov = outFov;
-    }
-    
-    // Second pass (50% of main time constant)
-    const alpha2 = Math.min(1.0, dt * omega * 1.0);
-    __butterState2.focus.lerp(outFocus, alpha2);
-    __butterState2.offset.lerp(outOffset, alpha2);
-    __butterState2.fov += (outFov - __butterState2.fov) * alpha2;
-    
-    // Third pass (33% of main time constant)  
-    const alpha3 = Math.min(1.0, dt * omega * 0.67);
-    __butterState3.focus.lerp(__butterState2.focus, alpha3);
-    __butterState3.offset.lerp(__butterState2.offset, alpha3);
-    __butterState3.fov += (__butterState2.fov - __butterState3.fov) * alpha3;
-    
-    // Use the triple-smoothed result
-    outFocus = __butterState3.focus.clone();
-    outOffset = __butterState3.offset.clone();
-    outFov = __butterState3.fov;
-  }
-  
-  return { focus: outFocus, offset: outOffset, fov: outFov };
 }
 
 // ============================================
@@ -4173,7 +3961,6 @@ function applyButterSmoothing(offset, focus, fov, globalProgress) {
 // 2. Distance-based speed scaling WITHIN each segment (slower when close, faster when far)
 // 3. Speedramps override everything in designated zones
 // 4. Velocity-preserving easing: camera passes through exact positions with zero velocity at checkpoints
-// 5. Butter smoothing (applied later) adds final gimbal polish
 //
 // NOTE: Recording timing is NOT used - we don't want setup time
 // to affect playback speed!
@@ -4376,60 +4163,36 @@ function getUnifiedPathPose(videoProgress) {
   return { offset, focus, fov, deckIdx, deckFadeMs };
 }
 
-// Velocity-preserving easing using sine curve
+// Velocity-preserving easing using power curve (exponential)
 // - Position at t=0 maps to exactly 0
 // - Position at t=1 maps to exactly 1
-// - Velocity at t=0 = 0 (smooth start)
-// - Velocity at t=1 = 0 (smooth stop)
-// This is like the top/bottom of a sine wave - velocity touches zero before changing direction
+// - Velocity at t=0 = 0 (smooth start from waypoint)
+// - Velocity at t=1 = 0 (smooth arrival at waypoint)
+// 
+// Uses symmetric power easing: slow at endpoints, fast in middle
+// Exponent controls how dramatic the slowdown is at waypoints
 function __velocityZeroEasing(t) {
-  // Base: (1 - cos(πt)) / 2
-  // This is the classic "ease in-out sine" - smooth start AND smooth stop
-  // Derivative: (π/2) * sin(πt), which is 0 at t=0 and t=1
+  // Get exponent from UI (1-8 range)
+  // 1 = linear (no easing)
+  // 2 = quadratic (subtle)
+  // 3-4 = smooth professional motion
+  // 5+ = dramatic pauses at waypoints
+  const exponent = parseFloat(document.getElementById('rampPower')?.value || 2.5);
   
-  // Get the strength from UI (1-200 range)
-  // INVERTED: Higher values = smoother/gentler transitions (less extreme easing)
-  //           Lower values = more dramatic pauses at waypoints
-  const rawValue = parseFloat(document.getElementById('rampPower')?.value || 100);
+  // Exponent of 1 means linear - no easing at all
+  if (exponent <= 1.0) {
+    return t;
+  }
   
-  // Map 1-200 to easing intensity:
-  // - Value 1 = most extreme (multiple sine iterations, big pauses)
-  // - Value 100 = moderate (single sine ease)
-  // - Value 200 = gentlest (nearly linear, smoothest motion)
-  
-  // Invert: high slider = low intensity
-  const invertedValue = 201 - rawValue; // 1->200, 200->1
-  const power = invertedValue / 100; // 0.01 to 2.0
-  
-  // Sine-based ease (always has zero velocity at endpoints)
-  const sineEased = (1 - Math.cos(Math.PI * t)) / 2;
-  
-  // Blend between linear and sine-eased based on power
-  // power < 1: blend toward linear (smoother, less dramatic)
-  // power = 1: full single sine easing
-  // power > 1: apply sine multiple times for dramatic slowdown at endpoints
-  
-  if (power <= 1) {
-    // Blend between linear (smooth) and sine-eased
-    return t * (1 - power) + sineEased * power;
+  // Symmetric power easing (ease in-out)
+  // First half: slow start, accelerating
+  // Second half: decelerating, slow stop
+  if (t < 0.5) {
+    // Ease in: 0.5 * (2t)^n
+    return 0.5 * Math.pow(2 * t, exponent);
   } else {
-    // For power > 1, apply sine easing multiple times
-    // Each application makes the endpoints even slower (more dramatic pauses)
-    let result = t;
-    const iterations = Math.min(Math.floor(power), 4); // Cap at 4 iterations
-    const remainder = power - iterations;
-    
-    for (let i = 0; i < iterations; i++) {
-      result = (1 - Math.cos(Math.PI * result)) / 2;
-    }
-    
-    // Blend in partial iteration
-    if (remainder > 0) {
-      const nextIter = (1 - Math.cos(Math.PI * result)) / 2;
-      result = result * (1 - remainder) + nextIter * remainder;
-    }
-    
-    return result;
+    // Ease out: 1 - 0.5 * (2(1-t))^n
+    return 1 - 0.5 * Math.pow(2 * (1 - t), exponent);
   }
 }
 
@@ -8523,29 +8286,87 @@ console.log('[DIMS] Script loading...');
 
   console.log('[mobile] OrbitControls native touch support active');
 
-  // Help button functionality (keep this)
-  const instructionsOverlay = document.getElementById('instructionsOverlay');
-  const closeInstructions = document.getElementById('closeInstructions');
-  const showMobileHelp = document.getElementById('showMobileHelp');
-
-  // Show instructions on first mobile visit
-  if (isMobile && !localStorage.getItem('seenMobileInstructions')) {
-    setTimeout(() => {
-      if (instructionsOverlay) instructionsOverlay.classList.add('active');
-    }, 2000);
-    localStorage.setItem('seenMobileInstructions', 'true');
+  // Wire up mobile header buttons to existing Quick Controls buttons
+  function wireMobileHeader() {
+    const pairs = [
+      ['mhPathRecord', 'qcPathRecord'],
+      ['mhSpeedRamp', 'qcSpeedRamp'],
+      ['mhPathFinish', 'qcPathFinish'],
+      ['mhPathClear', 'qcPathClear'],
+      ['mhPrevImg', 'qcPrevImg'],
+      ['mhNextImg', 'qcNextImg'],
+      ['mhPreview', 'qcPreview'],
+      ['mhRecord', 'qcRecord'],
+      ['mhStop', 'qcStop']
+    ];
+    
+    pairs.forEach(([mhId, qcId]) => {
+      const mhBtn = document.getElementById(mhId);
+      const qcBtn = document.getElementById(qcId);
+      if (mhBtn && qcBtn) {
+        mhBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          qcBtn.click();
+        });
+      }
+    });
+    
+    // Sync button states from Quick Controls to Mobile Header
+    function syncMobileHeader() {
+      // Sync path control buttons
+      const syncPairs = [
+        ['mhPathRecord', 'qcPathRecord'],
+        ['mhPathFinish', 'qcPathFinish'],
+        ['mhPathClear', 'qcPathClear']
+      ];
+      
+      syncPairs.forEach(([mhId, qcId]) => {
+        const mh = document.getElementById(mhId);
+        const qc = document.getElementById(qcId);
+        if (mh && qc) {
+          mh.disabled = qc.disabled;
+          mh.textContent = qc.textContent;
+        }
+      });
+      
+      // Sync speedramp button specially (has special styling)
+      const mhRamp = document.getElementById('mhSpeedRamp');
+      const qcRamp = document.getElementById('qcSpeedRamp');
+      if (mhRamp && qcRamp) {
+        mhRamp.disabled = qcRamp.disabled;
+        mhRamp.textContent = qcRamp.textContent.replace('Speedramp ', '');
+        mhRamp.style.display = qcRamp.style.display;
+      }
+      
+      // Sync checkpoint count
+      const qcCount = document.getElementById('qcCheckpointCount');
+      const mhCount = document.getElementById('mhCheckpointCount');
+      if (qcCount && mhCount) {
+        mhCount.textContent = qcCount.textContent;
+      }
+      
+      // Sync speedramp indicator
+      const qcRampInd = document.getElementById('qcSpeedRampIndicator');
+      const mhRampInd = document.getElementById('mhSpeedRampIndicator');
+      if (qcRampInd && mhRampInd) {
+        mhRampInd.style.display = qcRampInd.style.display;
+      }
+      
+      // Show recording status when recording
+      const mhRecStatus = document.getElementById('mhRecordingStatus');
+      if (mhRecStatus && typeof recorder !== 'undefined' && recorder && recorder.state === 'recording') {
+        mhRecStatus.style.display = 'inline';
+      } else if (mhRecStatus) {
+        mhRecStatus.style.display = 'none';
+      }
+    }
+    
+    // Run sync periodically
+    setInterval(syncMobileHeader, 200);
+    syncMobileHeader();
   }
-
-  closeInstructions?.addEventListener('click', () => {
-    instructionsOverlay?.classList.remove('active');
-  });
-
-  showMobileHelp?.addEventListener('click', () => {
-    instructionsOverlay?.classList.add('active');
-  });
-
-  // Screen Record Mode removed - use direct recording instead
-  // All screen record functionality removed since button is gone
+  
+  setTimeout(wireMobileHeader, 500);
 
   // Prevent double-tap zoom on mobile
   let lastTap = 0;
@@ -8558,22 +8379,7 @@ console.log('[DIMS] Script loading...');
     lastTap = currentTime;
   });
 
-  // Show helpful hint on iOS
-  if (isIOS) {
-    setTimeout(() => {
-      const hint = document.createElement('div');
-      hint.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(138,210,255,0.9);color:#000;padding:12px 20px;border-radius:20px;font-size:13px;z-index:999;text-align:center;max-width:80%;box-shadow:0 4px 12px rgba(0,0,0,0.2);';
-      hint.innerHTML = '💡 Tap ☰ to show controls<br><span style="font-size:11px;opacity:0.7;">Touch viewport to position camera</span>';
-      document.body.appendChild(hint);
-      setTimeout(() => {
-        hint.style.transition = 'opacity 0.5s';
-        hint.style.opacity = '0';
-        setTimeout(() => hint.remove(), 500);
-      }, 5000);
-    }, 3000);
-  }
-
-  console.log('[mobile] Screen record mode initialized');
+  console.log('[mobile] Mobile header initialized');
 })();
 
 // -- Collapsible everything-but-Quick --
