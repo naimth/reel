@@ -558,13 +558,13 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 		  </span>
 		</label>
 
-		<div class="small" style="margin-top:-4px">Smoothly decelerates into waypoints and accelerates out (velocity → 0 at corners).</div>
+		<div class="small" style="margin-top:-4px">Gimbal-style: smoothly flows through waypoints with gradual velocity changes.</div>
 		<label>Ease Exponent<span>
-			<input type="range" id="rampPower" min="1.0" max="8" step="0.1" value="2.5">
-			<input type="number" id="rampPowerN" min="1.0" max="8" step="0.1" value="2.5">
+			<input type="range" id="rampPower" min="1.0" max="12" step="0.1" value="12">
+			<input type="number" id="rampPowerN" min="1.0" max="12" step="0.1" value="12">
         </span>
       </label>
-      <div class="small" style="margin-top:-4px">1 = linear (no easing). Higher = more dramatic slowdown at waypoints. Try 2-3 for subtle, 5+ for dramatic.</div>
+      <div class="small" style="margin-top:-4px">1 = linear. Higher = smoother flow (4: noticeable ease, 8: gimbal-like, 10-12: near-constant velocity).</div>
 			
 			<div class="small" style="margin-top:4px">When finished, the path will be available in the dropdown above.</div>
 	  </div>
@@ -795,6 +795,20 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 			<input type="number" id="grExposureN" min="0" max="1" step="0.01" value="0.5">
 		  </span>
 		</label>
+		<hr style="border-color:#2a2a35; margin: 8px 0;">
+		<h4>Motion Blur</h4>
+		<div class="small" style="margin-bottom:6px">Simulates camera motion blur for smoother, more cinematic video.</div>
+		<label class="row">
+		  <span><input type="checkbox" id="enableMotionBlur" checked> Enable Motion Blur</span>
+		  <span class="small">Best for recording</span>
+		</label>
+		<label>Blur Strength
+		  <span>
+			<input type="range" id="motionBlurStrength" min="0" max="0.9" step="0.05" value="0.9">
+			<input type="number" id="motionBlurStrengthN" min="0" max="0.9" step="0.05" value="0.9">
+		  </span>
+		</label>
+		<div class="small" style="margin-top:-4px">0 = no blur, 0.5 = smooth cinematic, 0.8+ = dreamy/ethereal.</div>
 	  </div>
 	</div>
 
@@ -982,6 +996,9 @@ zoomStepN.addEventListener('input', ()=> zoomStep.value = zoomStepN.value); } }c
 	const grWeightN = document.getElementById('grWeightN');
 	const grExposure = document.getElementById('grExposure');
 	const grExposureN = document.getElementById('grExposureN');
+	const enableMotionBlur = document.getElementById('enableMotionBlur');
+	const motionBlurStrength = document.getElementById('motionBlurStrength');
+	const motionBlurStrengthN = document.getElementById('motionBlurStrengthN');
 	const enableSpeedScale = document.getElementById('enableSpeedScale');
 	const speedScalePower = document.getElementById('speedScalePower');
 	const speedScalePowerN = document.getElementById('speedScalePowerN');
@@ -1022,7 +1039,8 @@ zoomStepN.addEventListener('input', ()=> zoomStep.value = zoomStepN.value); } }c
 	
 	// --- Post-Processing ---
 	let bloomComposer, finalComposer; let fadeUniform=null; // Replaced the single 'composer'
-	let bloomPass, flarePass, godRaysPass, finalPass;
+	let bloomPass, flarePass, godRaysPass, finalPass, motionBlurPass;
+	let motionBlurRT1, motionBlurRT2; // Ping-pong buffers for motion blur
 	
 	let occlusionRenderTarget;
 	let depthMaskRT, maskMaterial;
@@ -1614,6 +1632,65 @@ finalPass.uniforms.uFade = { value: 1.0 };
 fadeUniform = finalPass.uniforms.uFade;
 // Expose fadeUniform globally for crossfade transitions
 try { globalThis.fadeUniform = fadeUniform; window.fadeUniform = fadeUniform; } catch(_){}
+
+// --- Motion Blur Pass (Afterimage-style with ping-pong buffers) ---
+// This blends the current frame with previous frames for smooth, cinematic motion blur
+motionBlurRT1 = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+	minFilter: THREE.LinearFilter,
+	magFilter: THREE.LinearFilter,
+	format: THREE.RGBAFormat
+});
+motionBlurRT2 = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+	minFilter: THREE.LinearFilter,
+	magFilter: THREE.LinearFilter,
+	format: THREE.RGBAFormat
+});
+
+const motionBlurShader = {
+	uniforms: {
+		'tDiffuse': { value: null },
+		'tOldFrame': { value: null },
+		'uBlend': { value: 0.9 }, // How much of previous frame to keep (0-0.9)
+		'uEnabled': { value: 1 }  // 0 = disabled, 1 = enabled
+	},
+	vertexShader: `
+		varying vec2 vUv;
+		void main() {
+			vUv = uv;
+			gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+		}
+	`,
+	fragmentShader: `
+		uniform sampler2D tDiffuse;
+		uniform sampler2D tOldFrame;
+		uniform float uBlend;
+		uniform float uEnabled;
+		varying vec2 vUv;
+		
+		void main() {
+			vec4 currentFrame = texture2D(tDiffuse, vUv);
+			
+			if (uEnabled < 0.5) {
+				// Motion blur disabled - pass through current frame
+				gl_FragColor = currentFrame;
+				return;
+			}
+			
+			vec4 oldFrame = texture2D(tOldFrame, vUv);
+			
+			// Blend current frame with accumulated previous frames
+			// Higher uBlend = more motion blur (more ghosting from previous frames)
+			gl_FragColor = mix(currentFrame, oldFrame, uBlend);
+		}
+	`
+};
+motionBlurPass = new ShaderPass(motionBlurShader);
+motionBlurPass.uniforms.tOldFrame.value = motionBlurRT1.texture;
+motionBlurPass.enabled = true;
+
+// Custom render function to handle ping-pong
+motionBlurPass.renderToScreen = false;
+finalComposer.addPass(motionBlurPass);
 	}
 	
 	function createProceduralDirtTexture() {
@@ -1681,6 +1758,31 @@ try { globalThis.fadeUniform = fadeUniform; window.fadeUniform = fadeUniform; } 
 	};
 	[grDensity, grDecay, grWeight, grExposure].forEach(el => el.addEventListener('input', updateGodRays));
 
+	// Toggle Motion Blur and update params
+	enableMotionBlur.addEventListener('change', () => {
+		if (motionBlurPass) {
+			motionBlurPass.uniforms.uEnabled.value = enableMotionBlur.checked ? 1 : 0;
+			// Clear the accumulation buffers when toggling to avoid ghosting artifacts
+			if (renderer) {
+				if (motionBlurRT1) {
+					renderer.setRenderTarget(motionBlurRT1);
+					renderer.clear();
+				}
+				if (motionBlurRT2) {
+					renderer.setRenderTarget(motionBlurRT2);
+					renderer.clear();
+				}
+				renderer.setRenderTarget(null);
+			}
+		}
+	});
+	const updateMotionBlur = () => {
+		if (motionBlurPass) {
+			motionBlurPass.uniforms.uBlend.value = parseFloat(motionBlurStrength.value);
+		}
+	};
+	motionBlurStrength.addEventListener('input', updateMotionBlur);
+
 
 	// Layout/size
 	function setRendererSize(){
@@ -1692,6 +1794,8 @@ try { globalThis.fadeUniform = fadeUniform; window.fadeUniform = fadeUniform; } 
 	  if (finalComposer) finalComposer.setSize(w, h);
 	  if (occlusionRenderTarget) occlusionRenderTarget.setSize(w / 2, h / 2);
 		if (depthMaskRT) depthMaskRT.setSize(w, h);
+		if (motionBlurRT1) motionBlurRT1.setSize(w, h);
+		if (motionBlurRT2) motionBlurRT2.setSize(w, h);
 if (flarePass) flarePass.uniforms.uResolution.value.set(w, h);
 	  camera.aspect = w/h; camera.updateProjectionMatrix();
 	  targetW = w; targetH = h; canvas.style.aspectRatio = `${w} / ${h}`; layoutCanvas(); updateFrameOutline();
@@ -1701,7 +1805,7 @@ if (flarePass) flarePass.uniforms.uResolution.value.set(w, h);
 	function updateFrameOutline(){ const show = document.getElementById('showFrame'); if(show && show.checked){ canvas.style.outline='1px solid #2f2f3a'; canvas.style.boxShadow='0 0 0 1px #2f2f3a'; } else { canvas.style.outline='none'; canvas.style.boxShadow='none'; } }
 
 	const syncPairs=(a,b)=>{ a.addEventListener('input',()=>b.value=a.value); b.addEventListener('input',()=>a.value=b.value); };
-	[[durationEl,durationN],[yawAmp,yawAmpN],[pitchAmp,pitchAmpN],[fovMin,fovMinN],[fovMax,fovMaxN],[focusX,focusXN],[focusY,focusYN],[amb,ambN],[key,keyN],[backKey,backKeyN],[keyAng,keyAngN],[metal,metalN],[rough,roughN],[spec,specN],[photoEmis,photoEmisN],[backEmis,backEmisN],[exposure,exposureN],[thick,thickN],[minDist,minDistN],[maxDist,maxDistN],[exportScale,exportScaleN], [bloomThreshold, bloomThresholdN], [bloomStrength, bloomStrengthN], [bloomRadius, bloomRadiusN], [starburst, starburstN], [lensDirt, lensDirtN], [grDensity, grDensityN], [grDecay, grDecayN], [grWeight, grWeightN], [grExposure, grExposureN], [speedScalePower, speedScalePowerN],[zoomStep, zoomStepN], [pathTension, pathTensionN], [rampPower, rampPowerN]].forEach(([x,y])=>{ if(x&&y) syncPairs(x,y); });
+	[[durationEl,durationN],[yawAmp,yawAmpN],[pitchAmp,pitchAmpN],[fovMin,fovMinN],[fovMax,fovMaxN],[focusX,focusXN],[focusY,focusYN],[amb,ambN],[key,keyN],[backKey,backKeyN],[keyAng,keyAngN],[metal,metalN],[rough,roughN],[spec,specN],[photoEmis,photoEmisN],[backEmis,backEmisN],[exposure,exposureN],[thick,thickN],[minDist,minDistN],[maxDist,maxDistN],[exportScale,exportScaleN], [bloomThreshold, bloomThresholdN], [bloomStrength, bloomStrengthN], [bloomRadius, bloomRadiusN], [starburst, starburstN], [lensDirt, lensDirtN], [grDensity, grDensityN], [grDecay, grDecayN], [grWeight, grWeightN], [grExposure, grExposureN], [speedScalePower, speedScalePowerN],[zoomStep, zoomStepN], [pathTension, pathTensionN], [rampPower, rampPowerN], [motionBlurStrength, motionBlurStrengthN]].forEach(([x,y])=>{ if(x&&y) syncPairs(x,y); });
 
 // --- Set distance limits for OrbitControls ---
 function updateControlLimits() {
@@ -3083,6 +3187,17 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 
 	finalComposer.render();
 	
+	// --- Motion Blur: Ping-pong buffer swap for next frame ---
+	if (motionBlurRT1 && motionBlurRT2 && motionBlurPass && motionBlurPass.uniforms.uEnabled.value > 0.5) {
+		// Swap buffers: current output becomes next frame's "old frame"
+		const temp = motionBlurRT1;
+		motionBlurRT1 = motionBlurRT2;
+		motionBlurRT2 = temp;
+		
+		// Update the shader to read from the buffer we just rendered to
+		motionBlurPass.uniforms.tOldFrame.value = finalComposer.readBuffer.texture;
+	}
+	
 	// --- Draw photo base + coat last so post-FX stay behind
 	try{
 	  renderer.clearDepth();
@@ -4173,37 +4288,56 @@ function getUnifiedPathPose(videoProgress) {
   return { offset, focus, fov, deckIdx, deckFadeMs };
 }
 
-// Velocity-preserving easing using power curve (exponential)
-// - Position at t=0 maps to exactly 0
-// - Position at t=1 maps to exactly 1
-// - Velocity at t=0 = 0 (smooth start from waypoint)
-// - Velocity at t=1 = 0 (smooth arrival at waypoint)
+// GIMBAL-STYLE velocity easing using sinusoidal velocity profile
 // 
-// Uses symmetric power easing: slow at endpoints, fast in middle
-// Exponent controls how dramatic the slowdown is at waypoints
+// Instead of power-based position easing (which creates FLAT regions where
+// the camera "sits" at waypoints), this uses a smooth velocity profile:
+//   v(t) = vMin + (1 - vMin) * sin²(π * t)
+// 
+// Integrating gives position:
+//   p(t) = t - (1 - vMin) * sin(2πt) / (2π)
+// 
+// Key properties:
+// - Velocity is ALWAYS smooth (sinusoidal = continuous derivatives)
+// - Velocity never sits at zero - just briefly dips to vMin
+// - Higher exponent = higher vMin = more gradual/gimbal-like motion
+// - Camera flows THROUGH waypoints instead of stopping at them
+//
 function __velocityZeroEasing(t) {
-  // Get exponent from UI (1-8 range)
-  // 1 = linear (no easing)
-  // 2 = quadratic (subtle)
-  // 3-4 = smooth professional motion
-  // 5+ = dramatic pauses at waypoints
-  const exponent = parseFloat(document.getElementById('rampPower')?.value || 2.5);
+  const exponent = parseFloat(document.getElementById('rampPower')?.value || 12);
   
   // Exponent of 1 means linear - no easing at all
   if (exponent <= 1.0) {
     return t;
   }
   
-  // Symmetric power easing (ease in-out)
-  // First half: slow start, accelerating
-  // Second half: decelerating, slow stop
-  if (t < 0.5) {
-    // Ease in: 0.5 * (2t)^n
-    return 0.5 * Math.pow(2 * t, exponent);
-  } else {
-    // Ease out: 1 - 0.5 * (2(1-t))^n
-    return 1 - 0.5 * Math.pow(2 * (1 - t), exponent);
-  }
+  // Map exponent (1-12) to minimum velocity factor using exponential decay
+  // This asymptotically approaches 1.0 as exponent increases:
+  //   vMin = 1 - 0.5^((exp-1)/2)
+  //
+  // exp=2:  vMin = 1 - 0.5^0.5  ≈ 0.29 (velocity dips to ~29%)
+  // exp=4:  vMin = 1 - 0.5^1.5  ≈ 0.65 (velocity dips to ~65%)
+  // exp=6:  vMin = 1 - 0.5^2.5  ≈ 0.82 (velocity dips to ~82%)
+  // exp=8:  vMin = 1 - 0.5^3.5  ≈ 0.91 (velocity dips to ~91% - gimbal-like)
+  // exp=10: vMin = 1 - 0.5^4.5  ≈ 0.96 (velocity dips to ~96% - very smooth)
+  // exp=12: vMin = 1 - 0.5^5.5  ≈ 0.98 (velocity dips to ~98% - nearly constant)
+  //
+  const vMin = 1 - Math.pow(0.5, (exponent - 1) / 2);
+  
+  // Clamp vMin to reasonable range (never fully 1.0 to preserve some easing)
+  const clampedVMin = Math.max(0, Math.min(0.99, vMin));
+  
+  // Position from integrated sinusoidal velocity profile
+  // p(t) = t - (1 - vMin) * sin(2πt) / (2π)
+  //
+  // This creates a smooth S-curve where:
+  // - Velocity gradually decreases approaching waypoint
+  // - Briefly touches vMin (never zero for exp > 1)
+  // - Gradually increases leaving waypoint
+  // - No "flat" regions, no sudden velocity changes
+  //
+  const sinComponent = Math.sin(2 * Math.PI * t) / (2 * Math.PI);
+  return t - (1 - clampedVMin) * sinComponent;
 }
 
 // Apply distance-based speed scaling within a single segment
