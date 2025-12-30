@@ -639,14 +639,14 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 	  </label>
 	  <label>Key Light Angle (°)
 		<span>
-		  <input type="range" id="keyAng" min="-90" max="90" step="1" value="45">
-		  <input type="number" id="keyAngN" min="-90" max="90" step="1" value="45">
+		  <input type="range" id="keyAng" min="-90" max="90" step="1" value="20">
+		  <input type="number" id="keyAngN" min="-90" max="90" step="1" value="20">
 		</span>
 	  </label>
       <label>Key Light Azimuth (°)
         <span>
-          <input type="range" id="keyAz" min="-180" max="180" step="1" value="45">
-          <input type="number" id="keyAzN" min="-180" max="180" step="1" value="45">
+          <input type="range" id="keyAz" min="-180" max="180" step="1" value="120">
+          <input type="number" id="keyAzN" min="-180" max="180" step="1" value="120">
         </span>
       </label>
 	  <label>Reflectivity (metalness)
@@ -717,9 +717,97 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 	  <h3>Scenery</h3>
 	  <div class="stack">
 		<label class="row">
-		  <span><input type="checkbox" id="showStars" checked> Show Starfield</span>
-		  <span class="small">Adds a particle background</span>
+		  <span>Background Mode</span>
+		  <select id="bgMode" style="width:120px">
+			<option value="starfield" selected>Starfield</option>
+			<option value="hdri">HDRI</option>
+			<option value="ocean">Ocean & Sky</option>
+			<option value="solid">Solid Color</option>
+		  </select>
 		</label>
+		
+		<!-- Global scene lights toggle (available in all modes) -->
+		<label class="row">
+		  <span><input type="checkbox" id="hideSceneLights"> Hide Scene Lights</span>
+		  <span class="small">Key/back/ambient/sun off</span>
+		</label>
+		
+		<!-- Starfield Options (shown when bgMode=starfield) -->
+		<div id="starfieldOptions">
+		  <label class="row">
+			<span><input type="checkbox" id="showStars" checked> Show Stars</span>
+			<span class="small">Particle background</span>
+		  </label>
+		</div>
+		
+		<!-- HDRI Options (shown when bgMode=hdri) -->
+		<div id="hdriOptions" style="display:none">
+		  <label class="row" style="flex-direction:column; align-items:stretch; gap:6px">
+			<span>Load HDRI / Environment Map</span>
+			<input type="file" id="hdriFile" accept=".hdr,.exr,.jpg,.jpeg,.png,.webp" style="font-size:11px">
+		  </label>
+		  <div class="small" style="margin-top:4px">Supports .hdr, .jpg, .png (equirectangular)</div>
+		  <label>Background Intensity
+			<span>
+			  <input type="range" id="hdriBgIntensity" min="0" max="3" step="0.05" value="1">
+			  <input type="number" id="hdriBgIntensityN" min="0" max="3" step="0.05" value="1">
+			</span>
+		  </label>
+		  <label>Background Blur
+			<span>
+			  <input type="range" id="hdriBgBlur" min="0" max="1" step="0.01" value="0">
+			  <input type="number" id="hdriBgBlurN" min="0" max="1" step="0.01" value="0">
+			</span>
+		  </label>
+		  <label class="row">
+			<span><input type="checkbox" id="hdriEnvLighting" checked> Use for Lighting</span>
+			<span class="small">IBL reflections</span>
+		  </label>
+		  <div id="hdriStatus" class="small" style="margin-top:4px; color:var(--muted)">No HDRI loaded</div>
+		</div>
+		
+		<!-- Solid Color Options (shown when bgMode=solid) -->
+		<div id="solidOptions" style="display:none">
+		  <label class="row">
+			<span>Background Color</span>
+			<input type="color" id="bgColor" value="#000000" style="width:60px; height:28px; border:none; cursor:pointer">
+		  </label>
+		</div>
+		
+		<!-- Ocean & Sky Options (shown when bgMode=ocean) -->
+		<div id="oceanOptions" style="display:none">
+		  <label>Water Level
+			<span>
+			  <input type="range" id="oceanWaterLevel" min="-2" max="1.2" step="0.05" value="-0.5">
+			  <input type="number" id="oceanWaterLevelN" min="-2" max="1.2" step="0.05" value="-0.5">
+			</span>
+		  </label>
+		  <label>Sun Elevation
+			<span>
+			  <input type="range" id="oceanSunElevation" min="0" max="90" step="0.1" value="2">
+			  <input type="number" id="oceanSunElevationN" min="0" max="90" step="0.1" value="2">
+			</span>
+		  </label>
+		  <label>Sun Azimuth
+			<span>
+			  <input type="range" id="oceanSunAzimuth" min="-180" max="180" step="0.1" value="90">
+			  <input type="number" id="oceanSunAzimuthN" min="-180" max="180" step="0.1" value="90">
+			</span>
+		  </label>
+		  <label>Distortion Scale
+			<span>
+			  <input type="range" id="oceanDistortion" min="0" max="8" step="0.1" value="0">
+			  <input type="number" id="oceanDistortionN" min="0" max="8" step="0.1" value="0">
+			</span>
+		  </label>
+		  <label>Wave Size
+			<span>
+			  <input type="range" id="oceanWaveSize" min="0.1" max="10" step="0.1" value="10">
+			  <input type="number" id="oceanWaveSizeN" min="0.1" max="10" step="0.1" value="10">
+			</span>
+		  </label>
+		  <label><input type="checkbox" id="oceanAnimateWaves" checked> Animate Waves</label>
+		</div>
 	  </div>
 	</div>
 
@@ -851,6 +939,9 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 	import { RenderPass } from 'https://esm.sh/three@0.161.0/examples/jsm/postprocessing/RenderPass.js';
 	import { UnrealBloomPass } from 'https://esm.sh/three@0.161.0/examples/jsm/postprocessing/UnrealBloomPass.js';
 	import { ShaderPass } from 'https://esm.sh/three@0.161.0/examples/jsm/postprocessing/ShaderPass.js';
+import { RGBELoader } from 'https://esm.sh/three@0.161.0/examples/jsm/loaders/RGBELoader.js';
+import { Water } from 'https://esm.sh/three@0.161.0/examples/jsm/objects/Water.js';
+import { Sky } from 'https://esm.sh/three@0.161.0/examples/jsm/objects/Sky.js';
 
 	// CRITICAL FIX: Expose THREE globally so deck code can access it
 	window.THREE = THREE;
@@ -1008,6 +1099,7 @@ zoomStepN.addEventListener('input', ()=> zoomStep.value = zoomStepN.value); } }c
 // --- Selective Bloom Setup ---
 	const BASE_LAYER = 0;
 	const BLOOM_LAYER = 1;
+	const GOD_RAY_ONLY_LAYER = 2; // For objects that should only appear in god ray occlusion pass
 	const bloomLayer = new THREE.Layers();
 	bloomLayer.set(BLOOM_LAYER);
 	const darkMaterial = new THREE.MeshBasicMaterial({ color: 'black' });
@@ -1164,7 +1256,7 @@ let __coatEnvTex = null;
     const ambI  = Number(params && params.ambI != null ? params.ambI : 1.0);
     const keyI  = Number(params && params.keyI != null ? params.keyI : 1.0);
     const backI = Number(params && params.backI != null ? params.backI : 0.8);
-    const keyAngDeg = Number(params && params.keyAngDeg != null ? params.keyAngDeg : 45);
+    const keyAngDeg = Number(params && params.keyAngDeg != null ? params.keyAngDeg : 20);
 
     if (!this.pmrem) this.pmrem = new THREE.PMREMGenerator(renderer);
     if (!this.scene){
@@ -1216,10 +1308,10 @@ back.rotation.set(0.2, 0, 0);
       const amb  = parseFloat((document.getElementById('amb')||{}).value || 1);
       const key  = parseFloat((document.getElementById('key')||{}).value || 1);
       const back = parseFloat((document.getElementById('backKey')||{}).value || 0.8);
-      const ang  = parseFloat((document.getElementById('keyAng')||{}).value || 45);
+      const ang  = parseFloat((document.getElementById('keyAng')||{}).value || 20);
             const azEl = document.getElementById('keyAz');
       const azN  = document.getElementById('keyAzN');
-      const azRaw = parseFloat((azEl||{}).value || 45);
+      const azRaw = parseFloat((azEl||{}).value || 120);
       if (azN && !isNaN(azRaw)) { azN.value = String(azRaw); }
 const r = G.renderer || G['renderer'];
       if (!r) { setTimeout(G.TedEnv.refreshFromUI, 120); return; }
@@ -1642,6 +1734,635 @@ try { globalThis.fadeUniform = fadeUniform; window.fadeUniform = fadeUniform; } 
 	if (starfield) starfield.visible = showStars.checked;
 	});
 
+// === HDRI / Background Mode System ===
+let currentHDRITexture = null;
+let pmremGenerator = null;
+let originalSceneBackground = null;
+let originalSceneEnvironment = null;
+let savedLightIntensities = null;
+
+// === Ocean & Sky Environment System ===
+let oceanWater = null;
+let oceanSky = null;
+let oceanSunVector = new THREE.Vector3();
+let oceanRenderTarget = null;
+let oceanInitialized = false;
+
+// DOM refs for HDRI controls
+const bgModeSelect = document.getElementById('bgMode');
+const starfieldOptions = document.getElementById('starfieldOptions');
+const hdriOptions = document.getElementById('hdriOptions');
+const solidOptions = document.getElementById('solidOptions');
+const oceanOptions = document.getElementById('oceanOptions');
+const hdriFileInput = document.getElementById('hdriFile');
+const hdriBgIntensity = document.getElementById('hdriBgIntensity');
+const hdriBgIntensityN = document.getElementById('hdriBgIntensityN');
+const hdriBgBlur = document.getElementById('hdriBgBlur');
+const hdriBgBlurN = document.getElementById('hdriBgBlurN');
+const hdriEnvLighting = document.getElementById('hdriEnvLighting');
+const hideSceneLightsCheckbox = document.getElementById('hideSceneLights');
+const hdriStatus = document.getElementById('hdriStatus');
+const bgColorPicker = document.getElementById('bgColor');
+
+// DOM refs for Ocean controls
+const oceanSunElevation = document.getElementById('oceanSunElevation');
+const oceanSunElevationN = document.getElementById('oceanSunElevationN');
+const oceanSunAzimuth = document.getElementById('oceanSunAzimuth');
+const oceanSunAzimuthN = document.getElementById('oceanSunAzimuthN');
+const oceanDistortion = document.getElementById('oceanDistortion');
+const oceanDistortionN = document.getElementById('oceanDistortionN');
+const oceanWaveSize = document.getElementById('oceanWaveSize');
+const oceanWaveSizeN = document.getElementById('oceanWaveSizeN');
+const oceanAnimateWaves = document.getElementById('oceanAnimateWaves');
+const oceanWaterLevel = document.getElementById('oceanWaterLevel');
+const oceanWaterLevelN = document.getElementById('oceanWaterLevelN');
+
+// Sync sliders
+if(hdriBgIntensity && hdriBgIntensityN) {
+  hdriBgIntensity.addEventListener('input', () => { hdriBgIntensityN.value = hdriBgIntensity.value; updateHDRIIntensity(); });
+  hdriBgIntensityN.addEventListener('input', () => { hdriBgIntensity.value = hdriBgIntensityN.value; updateHDRIIntensity(); });
+}
+if(hdriBgBlur && hdriBgBlurN) {
+  hdriBgBlur.addEventListener('input', () => { hdriBgBlurN.value = hdriBgBlur.value; updateHDRIBlur(); });
+  hdriBgBlurN.addEventListener('input', () => { hdriBgBlur.value = hdriBgBlurN.value; updateHDRIBlur(); });
+}
+
+// Sync ocean controls
+function syncOceanSlider(slider, num, callback) {
+  if (slider && num) {
+    slider.addEventListener('input', () => { num.value = slider.value; callback?.(); });
+    num.addEventListener('input', () => { slider.value = num.value; callback?.(); });
+  }
+}
+syncOceanSlider(oceanSunElevation, oceanSunElevationN, updateOceanSun);
+syncOceanSlider(oceanSunAzimuth, oceanSunAzimuthN, updateOceanSun);
+syncOceanSlider(oceanDistortion, oceanDistortionN, () => {
+  if (oceanWater) oceanWater.material.uniforms['distortionScale'].value = parseFloat(oceanDistortion.value);
+});
+syncOceanSlider(oceanWaveSize, oceanWaveSizeN, () => {
+  if (oceanWater) oceanWater.material.uniforms['size'].value = parseFloat(oceanWaveSize.value);
+});
+syncOceanSlider(oceanWaterLevel, oceanWaterLevelN, () => {
+  updateOceanWaterLevel(currentPhotoHeight);
+});
+
+// Store current photo height for water level calculations
+let currentPhotoHeight = 1;
+
+// Initialize Ocean & Sky environment
+function initOceanEnvironment() {
+  if (oceanInitialized) return;
+  oceanInitialized = true;
+  
+  // Create water geometry - large plane
+  const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
+  
+  oceanWater = new Water(waterGeometry, {
+    textureWidth: 512,
+    textureHeight: 512,
+    waterNormals: new THREE.TextureLoader().load(
+      'https://threejs.org/examples/textures/waternormals.jpg',
+      (texture) => {
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      }
+    ),
+    sunDirection: new THREE.Vector3(),
+    sunColor: 0xffffff,
+    waterColor: 0x001e0f,
+    distortionScale: parseFloat(oceanDistortion?.value || 0),
+    fog: scene.fog !== undefined,
+  });
+  
+  // Initialize wave size from slider
+  oceanWater.material.uniforms['size'].value = parseFloat(oceanWaveSize?.value || 10);
+  
+  oceanWater.rotation.x = -Math.PI / 2;
+  oceanWater.position.y = -0.5; // Default position, will be updated when photo loads
+  oceanWater.name = 'oceanWater';
+  oceanWater.visible = false;
+  scene.add(oceanWater);
+  
+  // Create Sky
+  oceanSky = new Sky();
+  oceanSky.scale.setScalar(10000);
+  oceanSky.name = 'oceanSky';
+  oceanSky.visible = false;
+  scene.add(oceanSky);
+  
+  // Configure sky uniforms
+  const skyUniforms = oceanSky.material.uniforms;
+  skyUniforms['turbidity'].value = 10;
+  skyUniforms['rayleigh'].value = 2;
+  skyUniforms['mieCoefficient'].value = 0.005;
+  skyUniforms['mieDirectionalG'].value = 0.8;
+  
+  console.log('[Ocean] Environment initialized');
+}
+
+// Update ocean sun position and environment map
+function updateOceanSun() {
+  if (!oceanSky || !oceanWater) return;
+  
+  const elevation = parseFloat(oceanSunElevation?.value || 2);
+  const azimuth = parseFloat(oceanSunAzimuth?.value || 180);
+  
+  const phi = THREE.MathUtils.degToRad(90 - elevation);
+  const theta = THREE.MathUtils.degToRad(azimuth);
+  
+  oceanSunVector.setFromSphericalCoords(1, phi, theta);
+  
+  oceanSky.material.uniforms['sunPosition'].value.copy(oceanSunVector);
+  oceanWater.material.uniforms['sunDirection'].value.copy(oceanSunVector).normalize();
+  
+  // Generate environment map from sky
+  ensurePMREM();
+  if (oceanRenderTarget) oceanRenderTarget.dispose();
+  
+  // Temporarily make sky visible for PMREM capture
+  const wasVisible = oceanSky.visible;
+  const wasInScene = oceanSky.parent === scene;
+  
+  // Create a temporary scene for PMREM generation
+  const tempScene = new THREE.Scene();
+  tempScene.add(oceanSky);
+  
+  oceanRenderTarget = pmremGenerator.fromScene(tempScene);
+  
+  // Move sky back to main scene
+  scene.add(oceanSky);
+  oceanSky.visible = wasVisible;
+  
+  scene.environment = oceanRenderTarget.texture;
+}
+
+// Update ocean water level based on slider and photo height
+function updateOceanWaterLevel(photoHeight) {
+  if (!oceanWater) return;
+  
+  // Store photo height for slider updates
+  if (photoHeight) currentPhotoHeight = photoHeight;
+  const h = currentPhotoHeight || 1;
+  
+  // Slider value is in "photo heights relative to bottom edge"
+  // -2 = 2 heights below bottom, 0 = at bottom edge, 1 = at top edge
+  const sliderVal = parseFloat(oceanWaterLevel?.value ?? -0.5);
+  
+  // Photo is centered at origin, so bottom edge is at -h/2
+  const bottomEdge = -h / 2;
+  oceanWater.position.y = bottomEdge + sliderVal * h;
+  
+  console.log(`[Ocean] Water level set to y=${oceanWater.position.y.toFixed(3)} (slider: ${sliderVal})`);
+}
+
+// Initialize PMREM Generator
+function ensurePMREM() {
+  if (!pmremGenerator) {
+    pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
+  }
+  return pmremGenerator;
+}
+
+// Save current light intensities
+function saveLightIntensities() {
+  if (savedLightIntensities) return; // Already saved
+  savedLightIntensities = {
+    ambient: ambLight ? ambLight.intensity : 1,
+    key: keyLight ? keyLight.intensity : 1,
+    back: backLight ? backLight.intensity : 1,
+    hemi: hemi ? hemi.intensity : 0.08,
+    flare: flareLight ? flareLight.intensity : 2.5
+  };
+}
+
+// Restore light intensities
+function restoreLightIntensities() {
+  if (!savedLightIntensities) return;
+  if (ambLight) ambLight.intensity = savedLightIntensities.ambient;
+  if (keyLight) keyLight.intensity = savedLightIntensities.key;
+  if (backLight) backLight.intensity = savedLightIntensities.back;
+  if (hemi) hemi.intensity = savedLightIntensities.hemi;
+  if (flareLight) flareLight.intensity = savedLightIntensities.flare;
+  // flareStar layers are managed by setSceneLightsVisible and setFlareVisible
+}
+
+// Hide/show ALL scene lights (including sun/flare)
+function setSceneLightsVisible(visible) {
+  if (visible) {
+    restoreLightIntensities();
+    
+    // Restore flareStar layers based on background mode
+    const flareStar = scene.getObjectByName('flareStar');
+    if (flareStar && !window.__flareHiddenByBgMode) {
+      flareStar.layers.set(0);
+      flareStar.layers.enable(BLOOM_LAYER);
+      if (flareStar.material) {
+        flareStar.material.opacity = 1.0;
+        flareStar.material.needsUpdate = true;
+      }
+    }
+  } else {
+    saveLightIntensities();
+    if (ambLight) ambLight.intensity = 0;
+    if (keyLight) keyLight.intensity = 0;
+    if (backLight) backLight.intensity = 0;
+    if (hemi) hemi.intensity = 0;
+    if (flareLight) flareLight.intensity = 0;
+    
+    // Move flareStar to GOD_RAY_ONLY_LAYER so it only appears in god ray occlusion pass
+    const flareStar = scene.getObjectByName('flareStar');
+    if (flareStar) {
+      flareStar.layers.disableAll();
+      flareStar.layers.enable(GOD_RAY_ONLY_LAYER);
+    //  flareStar.layers.enable(BLOOM_LAYER);
+    }
+  }
+  
+  // Update the global flag so render loop respects it
+  window.__sceneLightsHidden = !visible;
+}
+
+// Hide/show flare elements (sun light source mesh only - effects stay active)
+// Uses layers to control whether flareStar appears in main render vs only god ray occlusion
+let __flareHiddenByBgMode = false;
+
+function setFlareVisible(visible) {
+  __flareHiddenByBgMode = !visible;
+  window.__flareHiddenByBgMode = !visible; // Update global for render loop
+  
+  const flareStar = scene.getObjectByName('flareStar');
+  if (flareStar) {
+    if (visible) {
+      // Show in main render: enable layer 0 and BLOOM_LAYER
+      flareStar.layers.set(0); // Reset to default
+      flareStar.layers.enable(BLOOM_LAYER);
+      flareStar.visible = true;
+      if (flareStar.material) {
+        flareStar.material.opacity = 1.0;
+        flareStar.material.needsUpdate = true;
+      }
+    } else {
+	  // Hidden in main render; only keep it around IF god rays are actually enabled
+	  flareStar.layers.disableAll();
+	  flareStar.layers.enable(GOD_RAY_ONLY_LAYER);  // occlusion-only
+	
+	  const allowGodRays = (godRaysPass && godRaysPass.enabled);
+	  flareStar.visible = allowGodRays; // if rays are off (HDRI/solid), disc is fully gone
+	
+	  if (flareStar.material) {
+		flareStar.material.opacity = 1.0;
+		flareStar.material.needsUpdate = true;
+	  }
+	}
+
+  }
+  
+  // Keep flareLight for the effects to use its position, but we can dim it
+  // so it doesn't add unwanted scene lighting in non-starfield modes
+  if (flareLight) {
+    if (!visible) {
+      if (flareLight.__originalIntensity === undefined) {
+        flareLight.__originalIntensity = flareLight.intensity;
+      }
+      flareLight.intensity = 0; // No scene lighting contribution
+    } else {
+      // Only restore if scene lights aren't globally hidden
+      if (!window.__sceneLightsHidden) {
+        if (flareLight.__originalIntensity !== undefined) {
+          flareLight.intensity = flareLight.__originalIntensity;
+          delete flareLight.__originalIntensity;
+        }
+      }
+    }
+  }
+}
+
+// Expose flags globally for render loop
+window.__flareHiddenByBgMode = false;
+window.__sceneLightsHidden = false;
+
+// Background mode switching
+function switchBackgroundMode(mode) {
+  // Store original background on first call
+  if (originalSceneBackground === null) {
+    originalSceneBackground = scene.background;
+    originalSceneEnvironment = scene.environment;
+  }
+  
+  // Hide all options first
+  starfieldOptions.style.display = 'none';
+  hdriOptions.style.display = 'none';
+  solidOptions.style.display = 'none';
+  oceanOptions.style.display = 'none';
+  
+  // Hide ocean elements by default
+  if (oceanWater) oceanWater.visible = false;
+  if (oceanSky) oceanSky.visible = false;
+  
+  // God Rays: only allowed in starfield mode
+  const allowGodRaysInThisMode = (mode === 'starfield');
+  if (godRaysPass) godRaysPass.enabled = allowGodRaysInThisMode && enableGodRays.checked;
+  
+  // Disable God Rays UI controls when not in starfield mode
+  [enableGodRays, grDensity, grDensityN, grDecay, grDecayN, grWeight, grWeightN, grExposure, grExposureN]
+	.forEach(el => { if (el) el.disabled = !allowGodRaysInThisMode; });
+
+  
+  switch(mode) {
+    case 'starfield':
+      starfieldOptions.style.display = 'block';
+      // Restore starfield mode
+      if (starfield) starfield.visible = showStars.checked;
+      setFlareVisible(true);
+      // Restore original black background
+      scene.background = new THREE.Color(0x000000);
+      // Restore TedEnv for lighting
+      if (globalThis.TedEnv && TedEnv.tex) {
+        scene.environment = TedEnv.tex;
+      }
+      // Respect the global hide scene lights toggle
+      if (hideSceneLightsCheckbox?.checked) {
+        setSceneLightsVisible(false);
+      } else {
+        restoreLightIntensities();
+      }
+	  // Non-HDRI modes: respect the UI toggles
+	  if (bloomPass) bloomPass.enabled = enableBloom.checked;
+	  if (flarePass) flarePass.enabled = enableAdvFlare.checked;
+	  
+	  // Restore exposure from UI
+	  const expVal = parseFloat(exposure?.value || 1.0);
+	  if (finalPass && finalPass.uniforms.exposure) {
+	    finalPass.uniforms.exposure.value = expVal;
+	  }
+	  renderer.toneMappingExposure = 1.0;
+
+      break;
+      
+    case 'hdri':
+	
+
+      hdriOptions.style.display = 'block';
+      // Hide starfield and flare elements
+      if (starfield) starfield.visible = false;
+      setFlareVisible(false);
+	  
+// HDRI mode: force these off
+	  if (bloomPass) bloomPass.enabled = false;
+	  if (flarePass) flarePass.enabled = false;
+
+
+	  
+      // Respect the global hide scene lights toggle
+      if (hideSceneLightsCheckbox?.checked) {
+        setSceneLightsVisible(false);
+      } else {
+        restoreLightIntensities();
+      }
+      // Apply loaded HDRI if available
+      if (currentHDRITexture) {
+        applyHDRIBackground();
+      } else {
+        // Show placeholder
+        scene.background = new THREE.Color(0x1a1a2e);
+      }
+      
+      // Restore exposure from UI
+      const hdriExpVal = parseFloat(exposure?.value || 1.0);
+      if (finalPass && finalPass.uniforms.exposure) {
+        finalPass.uniforms.exposure.value = hdriExpVal;
+      }
+      renderer.toneMappingExposure = 1.0;
+      
+      break;
+      
+    case 'solid':
+	
+
+      solidOptions.style.display = 'block';
+      // Hide starfield and flare elements
+      if (starfield) starfield.visible = false;
+      setFlareVisible(false);
+      // Respect the global hide scene lights toggle
+      if (hideSceneLightsCheckbox?.checked) {
+        setSceneLightsVisible(false);
+      } else {
+        restoreLightIntensities();
+		
+      }
+      // Apply solid color
+      const color = bgColorPicker ? bgColorPicker.value : '#000000';
+      scene.background = new THREE.Color(color);
+      // Keep TedEnv for lighting
+      if (globalThis.TedEnv && TedEnv.tex) {
+        scene.environment = TedEnv.tex;
+      }
+	  
+	  // Non-HDRI modes: respect the UI toggles
+	  if (bloomPass) bloomPass.enabled = enableBloom.checked;
+	  if (flarePass) flarePass.enabled = enableAdvFlare.checked;
+	  
+	  // Restore exposure from UI
+	  const solidExpVal = parseFloat(exposure?.value || 1.0);
+	  if (finalPass && finalPass.uniforms.exposure) {
+	    finalPass.uniforms.exposure.value = solidExpVal;
+	  }
+	  renderer.toneMappingExposure = 1.0;
+
+	  
+      break;
+      
+    case 'ocean':
+      oceanOptions.style.display = 'block';
+      
+      // Hide starfield and flare elements
+      if (starfield) starfield.visible = false;
+      setFlareVisible(false);
+      
+      // Initialize ocean if not already done
+      initOceanEnvironment();
+      
+      // Show ocean elements
+      if (oceanWater) oceanWater.visible = true;
+      if (oceanSky) oceanSky.visible = true;
+      
+      // Update sun position and environment
+      updateOceanSun();
+      
+      // Ocean mode: disable ALL post-processing to avoid sun blowout
+      if (bloomPass) bloomPass.enabled = false;
+      if (flarePass) flarePass.enabled = false;
+      if (godRaysPass) godRaysPass.enabled = false;
+      
+      // Lower exposure for ocean sky (prevents sun blowout)
+      if (finalPass && finalPass.uniforms.exposure) {
+        finalPass.uniforms.exposure.value = 0.5;
+      }
+      renderer.toneMappingExposure = 0.5;
+      
+      // Respect the global hide scene lights toggle
+      if (hideSceneLightsCheckbox?.checked) {
+        setSceneLightsVisible(false);
+      } else {
+        restoreLightIntensities();
+      }
+      
+      // Clear the scene background so sky shows through
+      scene.background = null;
+      
+      break;
+  }
+}
+
+// Load HDRI file
+function loadHDRIFile(file) {
+  if (!file) return;
+  
+  hdriStatus.textContent = 'Loading...';
+  hdriStatus.style.color = 'var(--warn)';
+  
+  const url = URL.createObjectURL(file);
+  const ext = file.name.toLowerCase().split('.').pop();
+  
+  if (ext === 'hdr') {
+    // Load .hdr with RGBELoader
+    const loader = new RGBELoader();
+    loader.load(url, 
+      (texture) => {
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        processLoadedHDRI(texture, file.name);
+        URL.revokeObjectURL(url);
+      },
+      (progress) => {
+        const pct = progress.total ? Math.round((progress.loaded / progress.total) * 100) : 0;
+        hdriStatus.textContent = `Loading... ${pct}%`;
+      },
+      (error) => {
+        console.error('[HDRI] Load error:', error);
+        hdriStatus.textContent = 'Error loading HDR file';
+        hdriStatus.style.color = 'var(--bad)';
+        URL.revokeObjectURL(url);
+      }
+    );
+  } else {
+    // Load .jpg/.png/.webp as regular texture
+    const loader = new THREE.TextureLoader();
+    loader.load(url,
+      (texture) => {
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        processLoadedHDRI(texture, file.name);
+        URL.revokeObjectURL(url);
+      },
+      undefined,
+      (error) => {
+        console.error('[HDRI] Load error:', error);
+        hdriStatus.textContent = 'Error loading image';
+        hdriStatus.style.color = 'var(--bad)';
+        URL.revokeObjectURL(url);
+      }
+    );
+  }
+}
+
+// Process loaded HDRI
+function processLoadedHDRI(texture, filename) {
+  // Dispose old texture
+  if (currentHDRITexture) {
+    currentHDRITexture.dispose();
+  }
+  
+  currentHDRITexture = texture;
+  
+  // Generate PMREM for environment lighting
+  ensurePMREM();
+  const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+  currentHDRITexture.envMap = envMap;
+  
+  hdriStatus.textContent = `Loaded: ${filename}`;
+  hdriStatus.style.color = 'var(--good)';
+  
+  applyHDRIBackground();
+}
+
+// Apply HDRI as background
+function applyHDRIBackground() {
+  if (!currentHDRITexture) return;
+  
+  const blur = parseFloat(hdriBgBlur?.value || 0);
+  
+  if (blur > 0.01) {
+    // Use blurred version via PMREM
+    ensurePMREM();
+    const blurredEnv = pmremGenerator.fromEquirectangular(currentHDRITexture).texture;
+    scene.background = blurredEnv;
+    scene.backgroundBlurriness = blur;
+  } else {
+    scene.background = currentHDRITexture;
+    scene.backgroundBlurriness = 0;
+  }
+  
+  // Apply intensity via renderer exposure (approximation)
+  const intensity = parseFloat(hdriBgIntensity?.value || 1);
+  scene.backgroundIntensity = intensity;
+  
+  // Use for lighting if checked
+  if (hdriEnvLighting?.checked && currentHDRITexture.envMap) {
+    scene.environment = currentHDRITexture.envMap;
+  } else if (globalThis.TedEnv && TedEnv.tex) {
+    scene.environment = TedEnv.tex;
+  }
+}
+
+// Update HDRI intensity
+function updateHDRIIntensity() {
+  if (bgModeSelect?.value !== 'hdri') return;
+  const intensity = parseFloat(hdriBgIntensity?.value || 1);
+  scene.backgroundIntensity = intensity;
+}
+
+// Update HDRI blur
+function updateHDRIBlur() {
+  if (bgModeSelect?.value !== 'hdri') return;
+  const blur = parseFloat(hdriBgBlur?.value || 0);
+  scene.backgroundBlurriness = blur;
+}
+
+// Event listeners
+if (bgModeSelect) {
+  bgModeSelect.addEventListener('change', () => switchBackgroundMode(bgModeSelect.value));
+}
+
+if (hdriFileInput) {
+  hdriFileInput.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) loadHDRIFile(file);
+  });
+}
+
+if (hdriEnvLighting) {
+  hdriEnvLighting.addEventListener('change', () => {
+    if (bgModeSelect?.value === 'hdri') applyHDRIBackground();
+  });
+}
+
+// Global hide scene lights toggle - works in all modes
+if (hideSceneLightsCheckbox) {
+  hideSceneLightsCheckbox.addEventListener('change', () => {
+    setSceneLightsVisible(!hideSceneLightsCheckbox.checked);
+  });
+}
+
+if (bgColorPicker) {
+  bgColorPicker.addEventListener('input', () => {
+    if (bgModeSelect?.value === 'solid') {
+      scene.background = new THREE.Color(bgColorPicker.value);
+    }
+  });
+}
+
+console.log('[HDRI] Background mode system initialized');
+
 	// Toggle bloom and update params
 	enableBloom.addEventListener('change', () => {
 	if (bloomPass) bloomPass.enabled = enableBloom.checked;
@@ -1667,10 +2388,10 @@ try { globalThis.fadeUniform = fadeUniform; window.fadeUniform = fadeUniform; } 
 	};
 	[starburst, lensDirt].forEach(el => el.addEventListener('input', updateFlare));
 
-	// Toggle God Rays and update params
 	enableGodRays.addEventListener('change', () => {
-	if (godRaysPass) godRaysPass.enabled = enableGodRays.checked;
+	  if (godRaysPass) godRaysPass.enabled = enableGodRays.checked && (bgModeSelect?.value === 'starfield');
 	});
+
 	const updateGodRays = () => {
 	if (godRaysPass) {
 		godRaysPass.uniforms.uDensity.value = parseFloat(grDensity.value);
@@ -2061,7 +2782,7 @@ function createOrUpdatePhotoMesh(){
   }
 
   // 1) Base photo: unlit, no tone mapping
-  const baseMat = new THREE.MeshBasicMaterial({ map: photoTex, toneMapped: true, transparent: false });
+  const baseMat = new THREE.MeshBasicMaterial({ map: photoTex, toneMapped: false, transparent: false });
   photoMesh = new THREE.Mesh(geo, baseMat);
   photoMesh.layers.set(BASE_LAYER);
   photoMesh.renderOrder = 10;
@@ -2221,6 +2942,9 @@ photoCoat = new THREE.Mesh(geo.clone(), coatMat);
 
   updateFocusRanges();
   try{ if (globalThis.TedEnv && TedEnv.refreshFromUI) TedEnv.refreshFromUI(); }catch(e){}
+  
+  // Position ocean water just below the bottom edge of the photo
+  updateOceanWaterLevel(HEIGHT);
 }
 
 try { window.createOrUpdatePhotoMesh = createOrUpdatePhotoMesh; } catch(_){}
@@ -2757,9 +3481,18 @@ canvas.addEventListener('wheel', (e)=>{
 	function animate(){
 	  requestAnimationFrame(animate);
 
+
+	  // Safety: ensure the photo frame never stays hidden after offscreen mask renders
+	  if (backMesh)  backMesh.visible  = true;
+	  if (sidesMesh) sidesMesh.visible = true;
 	  // Animate starfield
 	  if (starfield) {
 	starfield.rotation.y -= 0.0001;
+	  }
+	  
+	  // Animate ocean waves
+	  if (oceanWater && oceanWater.visible && oceanAnimateWaves?.checked) {
+	    oceanWater.material.uniforms['time'].value += 1.0 / 60.0;
 	  }
 
 	  // Update light positions for shaders
@@ -2877,15 +3610,12 @@ canvas.addEventListener('wheel', (e)=>{
 	    photoCoat.material.opacity = __fadeAlpha;
 	  }
 	  
-	  // Fade the sun/star light source - fades faster so photo is last visible
-	  const flareStar = scene.getObjectByName('flareStar');
-	  if (flareStar && flareStar.material) {
-	    if (!flareStar.material.transparent) { flareStar.material.transparent = true; flareStar.material.needsUpdate = true; }
-	    flareStar.material.opacity = __lightFadeAlpha;
-	  }
-	  if (flareLight) {
-	    // Also dim the actual light intensity
-	    flareLight.intensity = 2.5 * __lightFadeAlpha;
+	  // Fade the flareLight intensity (flareStar visibility is layer-controlled)
+	  // Only if not hidden by background mode or scene lights toggle
+	  if (!window.__flareHiddenByBgMode && !window.__sceneLightsHidden) {
+	    if (flareLight) {
+	      flareLight.intensity = 2.5 * __lightFadeAlpha;
+	    }
 	  }
 	}
 	
@@ -2981,15 +3711,16 @@ canvas.addEventListener('wheel', (e)=>{
 	renderer.setRenderTarget(occlusionRenderTarget);
 	// Do NOT clear; we want bright sources drawn over the black occluders we just wrote
 
-	// Render only bright things
+	// Render bright things including GOD_RAY_ONLY_LAYER (for flareStar when hidden from main render)
 	const __prevLayers = camera.layers.mask;
 	camera.layers.set(BLOOM_LAYER);
+	camera.layers.enable(GOD_RAY_ONLY_LAYER); // Include flareStar even when hidden from main render
 
 	const __prevOverride = scene.overrideMaterial;
 	scene.overrideMaterial = null;
 
-	// Ensure bright light sprite is visible
-	if (flareStar) flareStar.visible = true;
+	// flareStar visibility is now controlled via layers, not visibility flag
+	// It will render here if on GOD_RAY_ONLY_LAYER or BLOOM_LAYER
 
 	// Temporarily tweak starfield material to additive + low opacity for a softer occlusion
 	const __sf = scene.getObjectByName('starfield');
@@ -3066,6 +3797,24 @@ canvas.addEventListener('wheel', (e)=>{
 	// --- Render Pipeline ---
 	renderer.clear();
 
+	// Check if we're in ocean mode - bypass composers entirely for clean sky rendering
+	const isOceanMode = (bgModeSelect?.value === 'ocean');
+	
+	if (isOceanMode) {
+	  // Ocean mode: render directly like water.html does
+	  // Use ACES tone mapping for proper sky/sun rendering.
+	  // NOTE: the base photo material has toneMapped=false, so it stays consistent while still
+	  // participating in ocean reflections and proper depth occlusion.
+	  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+	  renderer.toneMappingExposure = 0.5;
+	  
+	  camera.layers.enableAll();
+	  renderer.render(scene, camera);
+	} else {
+	  // Normal mode: use composers for bloom/effects
+	  renderer.toneMapping = THREE.NoToneMapping;
+	  renderer.toneMappingExposure = 1.0;
+
 	// 1. Render BLOOM layer
 	camera.layers.set(BLOOM_LAYER);
 	scene.traverse(darkenNonBloomed);
@@ -3086,9 +3835,13 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	// --- Draw photo base + coat last so post-FX stay behind
 	try{
 	  renderer.clearDepth();
+	  // Render the full photo 'card' (frame + image + coat) on top
+	  if (backMesh)  { backMesh.visible = true;  renderer.render(backMesh,  camera); }
+	  if (sidesMesh) { sidesMesh.visible = true; renderer.render(sidesMesh, camera); }
 	  if (photoMesh) renderer.render(photoMesh, camera);
 	  if (photoCoat) renderer.render(photoCoat, camera);
 	}catch(e){ console.warn('final overlay render failed', e); }
+	}
 	}
 	
 	// Initial setup calls
@@ -3116,13 +3869,11 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 		photoCoat.material.opacity = 1.0;
 		photoCoat.material.needsUpdate = true;
 	}
-	// Restore sun/star visibility
-	const flareStar = scene.getObjectByName('flareStar');
-	if (flareStar && flareStar.material) {
-		flareStar.material.opacity = 1.0;
-		flareStar.material.needsUpdate = true;
+	// Restore sun/star visibility - layers are managed by setFlareVisible/setSceneLightsVisible
+	// Only restore flareLight intensity if not hidden
+	if (flareLight && !window.__flareHiddenByBgMode && !window.__sceneLightsHidden) {
+		flareLight.intensity = 2.5;
 	}
-	if (flareLight) flareLight.intensity = 2.5; // Restore original intensity
 
 	// After any kind of playback, re-attach the camera to the pivot
 	// to restore normal manual control functionality.
@@ -7656,6 +8407,45 @@ console.log('[DIMS] Script loading...');
 	  const dur = Number.isFinite(durOverride) ? durOverride : (parseFloat(document.getElementById('fadeMs')?.value || '900') || 900);
 	  const pm = window.photoMesh || gt.photoMesh;
 	  if (!pm) return;
+
+	  // --- FIX: Instant deck switches (dur=0) must NOT run the fade pipeline ---
+	  // Custom path preview uses __deck_crossfadeTo(idx, 0) for an immediate image swap.
+	  // The fade pipeline can zero out frame/back materials and (when dims don't change) never restore them.
+	  // For dur<=0, do a synchronous texture swap/rebuild and exit.
+	  if (dur <= 0) {
+		try {
+		  // Update dimension globals
+		  if (entry.width && entry.height) {
+			gt.photoWidth = entry.width;
+			gt.photoHeight = entry.height;
+			gt.photoAspect = entry.aspect || (entry.width / entry.height);
+			try { window.photoWidth = entry.width; window.photoHeight = entry.height; } catch(_){}
+		  }
+		  // Update texture globals
+		  if (entry.texture) {
+			gt.photoTex = entry.texture;
+			try { window.photoTex = entry.texture; } catch(_){}
+			try { entry.texture.needsUpdate = true; } catch(_){}
+		  }
+		  // Rebuild geometry only if needed; otherwise just swap the map
+		  if (dimsChanged && typeof gt.createOrUpdatePhotoMesh === 'function') {
+			gt.createOrUpdatePhotoMesh();
+		  } else {
+			const currentPm = gt.photoMesh || window.photoMesh;
+			if (currentPm && currentPm.material && entry.texture) {
+			  try { if (typeof mirrorTextureSettings === 'function' && currentPm.material.map) mirrorTextureSettings(entry.texture, currentPm.material.map); } catch(_){}
+			  currentPm.material.map = entry.texture;
+			  currentPm.material.needsUpdate = true;
+			}
+		  }
+		} catch(e) { console.warn('[crossfade] instant switch failed', e); }
+		globalThis.__crossfadeActive = false;
+		gt.deckIndex = index;
+		try { if (typeof deckIndex !== 'undefined') deckIndex = index; } catch(_){}
+		try { if (gt.deckEvents && gt.deckEvents.armed) gt.deckEvents.mark('to', index, 0, gt.deckIndex); } catch(_){}
+		return;
+	  }
+
 	  
 	  const allMeshes = [];
 	  if (pm) allMeshes.push(pm);
