@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Portrait Flyby Reel — Mobile v1.4 FIXED</title>
+  <title>Portrait Flyby Reel — Photo & Video Support</title>
   
   <!-- PWA Meta Tags -->
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -388,7 +388,7 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
   <div id="app">
 	<header>
 	  <h1>Portrait Flyby Reel</h1>
-	  <span class="pill"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span> v1.4</span>
+	  <span class="pill"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span> v1.5 Video</span>
 	  <span class="hint">Touch viewport to move camera</span>
 	</header>
 
@@ -422,10 +422,10 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 </div>
 
 	<div class="card">
-	  <h3>1) Image(s)</h3>
+	  <h3>1) Image(s) or Video</h3>
 	  <div class="stack">
-		<input id="file" type="file" accept="image/*" multiple />
-		<div class="small">Large images are supported; the app auto‑mipmaps and caps texture size for performance.</div>
+		<input id="file" type="file" accept="image/*,video/mp4,video/webm,video/quicktime,video/*" multiple />
+		<div class="small">Upload images or videos. Large files are auto-scaled for performance.</div>
 		<label>Max texture (px)
 		  <span>
 			<input type="checkbox" id="maxTexAuto" checked> Auto
@@ -560,11 +560,11 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 
 		<div class="small" style="margin-top:-4px">Gimbal-style: smoothly flows through waypoints with gradual velocity changes.</div>
 		<label>Ease Exponent<span>
-			<input type="range" id="rampPower" min="1.0" max="12" step="0.1" value="12">
-			<input type="number" id="rampPowerN" min="1.0" max="12" step="0.1" value="12">
+			<input type="range" id="rampPower" min="0.1" max="24" step="0.1" value="24">
+			<input type="number" id="rampPowerN" min="0.1" max="24" step="0.1" value="24">
         </span>
       </label>
-      <div class="small" style="margin-top:-4px">1 = linear. Higher = smoother flow (4: noticeable ease, 8: gimbal-like, 10-12: near-constant velocity).</div>
+      <div class="small" style="margin-top:-4px">&lt;1 = overshoot/bounce, 1 = full stop, 1-2 = dramatic pause, 8+ = smooth flow-through.</div>
 			
 			<div class="small" style="margin-top:4px">When finished, the path will be available in the dropdown above.</div>
 	  </div>
@@ -737,6 +737,10 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 		  <label class="row">
 			<span><input type="checkbox" id="showStars" checked> Show Stars</span>
 			<span class="small">Particle background</span>
+		  </label>
+		  <label class="row">
+			<span><input type="checkbox" id="showSun" checked> Show Sun</span>
+			<span class="small">Bright light source</span>
 		  </label>
 		</div>
 		
@@ -1052,6 +1056,7 @@ zoomStepN.addEventListener('input', ()=> zoomStep.value = zoomStepN.value); } }c
 	const overlay = document.getElementById('overlay');
 	const rightPane = document.getElementById('right');
 	const showStars = document.getElementById('showStars');
+	const showSun = document.getElementById('showSun');
 	const enableBloom = document.getElementById('enableBloom');
 	const bloomThreshold = document.getElementById('bloomThreshold');
 	const bloomThresholdN = document.getElementById('bloomThresholdN');
@@ -1732,6 +1737,31 @@ try { globalThis.fadeUniform = fadeUniform; window.fadeUniform = fadeUniform; } 
 	// Toggle starfield visibility
 	showStars.addEventListener('change', () => {
 	if (starfield) starfield.visible = showStars.checked;
+	});
+
+	// Toggle sun visibility
+	showSun.addEventListener('change', () => {
+	  const flareStar = scene.getObjectByName('flareStar');
+	  if (flareStar) {
+	    if (showSun.checked) {
+	      flareStar.visible = true;
+	      flareStar.layers.set(0);
+	      flareStar.layers.enable(BLOOM_LAYER);
+	      if (flareStar.material) {
+	        flareStar.material.opacity = 1.0;
+	        flareStar.material.needsUpdate = true;
+	      }
+	    } else {
+	      flareStar.visible = false;
+	      if (flareStar.material) {
+	        flareStar.material.opacity = 0;
+	        flareStar.material.needsUpdate = true;
+	      }
+	    }
+	  }
+	  if (flareLight) {
+	    flareLight.intensity = showSun.checked ? 2.5 : 0;
+	  }
 	});
 
 // === HDRI / Background Mode System ===
@@ -3610,11 +3640,23 @@ canvas.addEventListener('wheel', (e)=>{
 	    photoCoat.material.opacity = __fadeAlpha;
 	  }
 	  
-	  // Fade the flareLight intensity (flareStar visibility is layer-controlled)
-	  // Only if not hidden by background mode or scene lights toggle
-	  if (!window.__flareHiddenByBgMode && !window.__sceneLightsHidden) {
+	  // Fade the flareLight intensity and flareStar opacity
+	  // Only if not hidden by background mode, scene lights toggle, or showSun unchecked
+	  if (!window.__flareHiddenByBgMode && !window.__sceneLightsHidden && showSun && showSun.checked) {
 	    if (flareLight) {
 	      flareLight.intensity = 2.5 * __lightFadeAlpha;
+	    }
+	    // Also fade the flareStar mesh opacity
+	    const flareStar = scene.getObjectByName('flareStar');
+	    if (flareStar && flareStar.material) {
+	      flareStar.material.opacity = __lightFadeAlpha;
+	      flareStar.material.needsUpdate = true;
+	      // Ensure it's visible when fading in
+	      if (__lightFadeAlpha > 0) {
+	        flareStar.visible = true;
+	        flareStar.layers.set(0);
+	        flareStar.layers.enable(BLOOM_LAYER);
+	      }
 	    }
 	  }
 	}
@@ -3858,6 +3900,15 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	if (pathProgressDisplay) {
 		pathProgressDisplay.style.display = 'none';
 	}
+	
+	// Mute video when stopping playback
+	muteVideo();
+	
+	// Clean up audio context if recording
+	if (window.__recordingAudioCtx) {
+	  try { window.__recordingAudioCtx.close(); } catch(e) {}
+	  window.__recordingAudioCtx = null;
+	}
 
 	// Restore full visibility after playback ends
 	if (fadeUniform) fadeUniform.value = 1.0;
@@ -3872,7 +3923,22 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	// Restore sun/star visibility - layers are managed by setFlareVisible/setSceneLightsVisible
 	// Only restore flareLight intensity if not hidden
 	if (flareLight && !window.__flareHiddenByBgMode && !window.__sceneLightsHidden) {
-		flareLight.intensity = 2.5;
+		flareLight.intensity = (showSun && showSun.checked) ? 2.5 : 0;
+	}
+	// Restore flareStar opacity based on showSun setting
+	const flareStar = scene.getObjectByName('flareStar');
+	if (flareStar && flareStar.material) {
+	  if (showSun && showSun.checked) {
+	    flareStar.visible = true;
+	    flareStar.material.opacity = 1.0;
+	    flareStar.material.needsUpdate = true;
+	    flareStar.layers.set(0);
+	    flareStar.layers.enable(BLOOM_LAYER);
+	  } else {
+	    flareStar.visible = false;
+	    flareStar.material.opacity = 0;
+	    flareStar.material.needsUpdate = true;
+	  }
 	}
 
 	// After any kind of playback, re-attach the camera to the pivot
@@ -3893,9 +3959,129 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	}
 	}
 
-	function startPreview(){ 
+	// === VIDEO SYNC & AUDIO HELPERS ===
+	// Get the current video element (if any)
+	function getCurrentVideoElement() {
+	  // Check single-file video
+	  if (window.__currentVideoElement) return window.__currentVideoElement;
+	  // Check deck videos
+	  if (photoTex && photoTex.userData && photoTex.userData.sourceVideo) {
+	    return photoTex.userData.sourceVideo;
+	  }
+	  if (photoMesh && photoMesh.material && photoMesh.material.map) {
+	    const map = photoMesh.material.map;
+	    if (map.userData && map.userData.sourceVideo) {
+	      return map.userData.sourceVideo;
+	    }
+	    // VideoTexture stores the video in .image
+	    if (map.image && map.image.tagName === 'VIDEO') {
+	      return map.image;
+	    }
+	  }
+	  return null;
+	}
+	
+	// Seek video to beginning and pause, waiting for seek to complete
+	// Returns a promise that resolves when video is ready at position 0
+	function prepareVideoForPlayback(unmute = false) {
+	  return new Promise((resolve) => {
+	    const video = getCurrentVideoElement();
+	    if (!video) {
+	      resolve();
+	      return;
+	    }
+	    
+	    console.log('[video] Preparing video for playback...');
+	    
+	    // Pause first
+	    video.pause();
+	    
+	    // Disable loop during synchronized playback
+	    video.loop = false;
+	    
+	    // Set mute state
+	    video.muted = !unmute;
+	    
+	    // If already at the beginning, we're done
+	    if (video.currentTime < 0.05) {
+	      console.log('[video] Already at beginning');
+	      resolve();
+	      return;
+	    }
+	    
+	    // Seek to beginning and wait for it
+	    const onSeeked = () => {
+	      video.removeEventListener('seeked', onSeeked);
+	      console.log('[video] Seeked to beginning, currentTime:', video.currentTime);
+	      resolve();
+	    };
+	    
+	    video.addEventListener('seeked', onSeeked);
+	    video.currentTime = 0;
+	    
+	    // Timeout fallback in case seeked doesn't fire
+	    setTimeout(() => {
+	      video.removeEventListener('seeked', onSeeked);
+	      console.log('[video] Seek timeout, proceeding anyway');
+	      resolve();
+	    }, 500);
+	  });
+	}
+	
+	// Start video playback (call this when animation timer starts)
+	function startVideoPlayback() {
+	  const video = getCurrentVideoElement();
+	  if (video) {
+	    // Force to exactly 0 right before playing
+	    video.currentTime = 0;
+	    console.log('[video] Starting playback from time:', video.currentTime);
+	    video.play().then(() => {
+	      console.log('[video] Playback confirmed started');
+	    }).catch(e => console.warn('[video] Play failed:', e));
+	  }
+	}
+	
+	// Mute video and re-enable loop (for when stopping playback)
+	function muteVideo() {
+	  const video = getCurrentVideoElement();
+	  if (video) {
+	    video.muted = true;
+	    video.loop = true; // Re-enable loop for normal browsing
+	  }
+	}
+	
+	// Auto-set duration to match video length
+	function setDurationToVideoLength() {
+	  const video = getCurrentVideoElement();
+	  if (video && video.duration && isFinite(video.duration)) {
+	    const videoDuration = Math.ceil(video.duration);
+	    console.log('[video] Setting flight duration to video length:', videoDuration, 's');
+	    
+	    // Update the duration slider and number input
+	    const durationEl = document.getElementById('duration');
+	    const durationN = document.getElementById('durationN');
+	    
+	    // Expand max if video is longer than 60s
+	    if (videoDuration > 60) {
+	      if (durationEl) durationEl.max = videoDuration;
+	      if (durationN) durationN.max = videoDuration;
+	    }
+	    
+	    if (durationEl) {
+	      durationEl.value = videoDuration;
+	      // Trigger input event to update durationMs
+	      durationEl.dispatchEvent(new Event('input'));
+	    }
+	    if (durationN) durationN.value = videoDuration;
+	  }
+	}
+	
+	async function startPreview(){ 
 	  if (playing) return; // Guard against rapid clicks
 	  try { __cancelInertia(); } catch(e) {} // Cancel any manual move inertia
+	  
+	  // Prepare video: seek to beginning and pause, waiting for seek to complete
+	  await prepareVideoForPlayback(true);
 
 	  if (pathSel.value === 'customPath') {
 	if (!pathOffsetCurve) {
@@ -3965,6 +4151,8 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	// This prevents the "fade in" appearance at the start of preview
 	requestAnimationFrame(() => {
 	  requestAnimationFrame(() => {
+	    // START VIDEO AND ANIMATION AT EXACTLY THE SAME MOMENT
+	    startVideoPlayback();
 	    playing=true; 
 	    startTime=performance.now(); 
 	    if(controls){ controls.enablePan=false; controls.enabled=false; }
@@ -3977,11 +4165,15 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 
 	// Recording (oversampled)
 	let recorder=null, recordedChunks=[];
-	function startRecording(){
+	async function startRecording(){
 	  if (pathSel.value === 'customPath' && !pathOffsetCurve) {
 	alert('Please build and finish a custom path before recording.');
 	return;
 	  }
+	  
+	  // Prepare video: seek to beginning, pause, unmute for audio capture
+	  await prepareVideoForPlayback(true);
+	  
 	  const base = setRendererSize();
 	  const scale = parseFloat(exportScale?.value||'1')||1;
 	  const {w,h,fps} = base;
@@ -4019,9 +4211,39 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	  }
 	  
 	  const stream = canvas.captureStream(fps);
+	  
+	  // Try to capture audio from video and combine with canvas stream
+	  let combinedStream = stream;
+	  const videoForAudio = getCurrentVideoElement();
+	  if (videoForAudio && !videoForAudio.muted) {
+	    try {
+	      // Create audio context and capture video audio
+	      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+	      const source = audioCtx.createMediaElementSource(videoForAudio);
+	      const destination = audioCtx.createMediaStreamDestination();
+	      source.connect(destination);
+	      source.connect(audioCtx.destination); // Also play through speakers
+	      
+	      // Combine video (from canvas) with audio (from video element)
+	      const audioTrack = destination.stream.getAudioTracks()[0];
+	      if (audioTrack) {
+	        combinedStream = new MediaStream([
+	          ...stream.getVideoTracks(),
+	          audioTrack
+	        ]);
+	        console.log('[recording] Audio track added from video');
+	      }
+	      
+	      // Store audio context for cleanup
+	      window.__recordingAudioCtx = audioCtx;
+	    } catch(e) {
+	      console.warn('[recording] Could not capture video audio:', e);
+	    }
+	  }
+	  
 	  const types=[  'video/mp4;codecs="avc1.42E01E"',  'video/mp4;codecs="avc1.4D401E"',  'video/mp4;codecs="avc1.64001E"',  'video/webm;codecs=h264',  'video/webm;codecs=vp9',  'video/webm;codecs=vp8',  'video/webm']; let mime='';for(const m of types){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)){ mime=m; break; } }
 	  if(!window.MediaRecorder){ alert('MediaRecorder not supported in this browser.'); return; }
-	  recorder=new MediaRecorder(stream,{ mimeType:mime||undefined, videoBitsPerSecond:12_000_000 }); recordedChunks=[];
+	  recorder=new MediaRecorder(combinedStream,{ mimeType:mime||undefined, videoBitsPerSecond:12_000_000 }); recordedChunks=[];
 	  recorder.ondataavailable=(e)=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
 	  recorder.onstop=saveRecording; 
 	  recorder.start(); 
@@ -4067,20 +4289,95 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	  const file = files[0];
 	  console.log('[single-file handler] Processing single file:', file.name);
 	  
-	  try{ 
-		const result = await loadTextureFromFile(file); 
-		photoTex = result.texture; 
-		photoAspect = result.aspect; 
-		window.photoWidth = result.width;
-		window.photoHeight = result.height;
-		console.log('[single-file handler] Loaded:', {width: result.width, height: result.height, aspect: result.aspect});
-		createOrUpdatePhotoMesh(); 
-		applyNeutralNearPhotoDefaults(); 
-		recordBtn.disabled=false; 
-	  }catch(err){ 
-		console.error('[single-file handler] Error:', err); 
-		alert('Failed to load image.'); 
-	  } 
+	  // Check if this is a video file
+	  const videoTypes = ['video/mp4', 'video/webm', 'video/quicktime', 'video/ogg'];
+	  const videoExtensions = ['.mp4', '.webm', '.mov', '.ogg', '.m4v'];
+	  const isVideo = (file.type && videoTypes.some(t => file.type.toLowerCase().includes('video'))) ||
+	                  videoExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+	  
+	  if (isVideo) {
+		console.log('[single-file handler] Detected VIDEO file');
+		try {
+		  // Create video element
+		  const video = document.createElement('video');
+		  video.id = `single-video-${Date.now()}`;
+		  video.playsInline = true;
+		  video.muted = true;
+		  video.loop = true;
+		  video.crossOrigin = 'anonymous';
+		  video.preload = 'auto';
+		  video.style.display = 'none';
+		  
+		  const url = URL.createObjectURL(file);
+		  
+		  await new Promise((resolve, reject) => {
+			video.onloadedmetadata = () => {
+			  console.log('[single-file handler] Video metadata loaded:', video.videoWidth, 'x', video.videoHeight);
+			  
+			  // Create VideoTexture
+			  photoTex = new THREE.VideoTexture(video);
+			  photoTex.colorSpace = THREE.SRGBColorSpace;
+			  photoTex.flipY = false; // Match image orientation
+			  photoTex.minFilter = THREE.LinearFilter;
+			  photoTex.magFilter = THREE.LinearFilter;
+			  photoTex.generateMipmaps = false;
+			  photoTex.name = `video-texture-${file.name}`;
+			  photoTex.userData = { isVideo: true, sourceVideo: video };
+			  
+			  photoAspect = video.videoWidth / video.videoHeight;
+			  window.photoWidth = video.videoWidth;
+			  window.photoHeight = video.videoHeight;
+			  window.__currentVideoElement = video;
+			  
+			  // Add to DOM and start playing
+			  document.body.appendChild(video);
+			  video.play().then(() => {
+				console.log('[single-file handler] Video playing');
+			  }).catch(e => {
+				console.warn('[single-file handler] Video autoplay blocked:', e);
+				const startVideo = () => {
+				  video.play().catch(() => {});
+				  document.removeEventListener('click', startVideo);
+				};
+				document.addEventListener('click', startVideo, { once: true });
+			  });
+			  
+			  resolve();
+			};
+			video.onerror = (e) => {
+			  reject(new Error('Failed to load video'));
+			};
+			video.src = url;
+		  });
+		  
+		  console.log('[single-file handler] Video loaded:', {width: window.photoWidth, height: window.photoHeight, aspect: photoAspect});
+		  createOrUpdatePhotoMesh();
+		  applyNeutralNearPhotoDefaults();
+		  recordBtn.disabled = false;
+		  
+		  // Auto-set flight duration to match video length
+		  setDurationToVideoLength();
+		} catch(err) {
+		  console.error('[single-file handler] Video error:', err);
+		  alert('Failed to load video.');
+		}
+	  } else {
+		// Original image handling
+		try{ 
+		  const result = await loadTextureFromFile(file); 
+		  photoTex = result.texture; 
+		  photoAspect = result.aspect; 
+		  window.photoWidth = result.width;
+		  window.photoHeight = result.height;
+		  console.log('[single-file handler] Loaded:', {width: result.width, height: result.height, aspect: result.aspect});
+		  createOrUpdatePhotoMesh(); 
+		  applyNeutralNearPhotoDefaults(); 
+		  recordBtn.disabled=false; 
+		}catch(err){ 
+		  console.error('[single-file handler] Error:', err); 
+		  alert('Failed to load image.'); 
+		}
+	  }
 	});
 	// Reset focus
 	resetFocus.addEventListener('click', ()=>{
@@ -4942,26 +5239,23 @@ function getUnifiedPathPose(videoProgress) {
 function __velocityZeroEasing(t) {
   const exponent = parseFloat(document.getElementById('rampPower')?.value || 12);
   
-  // Exponent of 1 means linear - no easing at all
-  if (exponent <= 1.0) {
-    return t;
-  }
-  
-  // Map exponent (1-12) to minimum velocity factor using exponential decay
+  // Map exponent to minimum velocity factor using exponential decay
   // This asymptotically approaches 1.0 as exponent increases:
   //   vMin = 1 - 0.5^((exp-1)/2)
   //
+  // exp<1:  vMin < 0 (NEGATIVE = overshoot/bounce at waypoints!)
+  // exp=0.1: vMin ≈ -0.37 (37% reverse velocity - bouncy!)
+  // exp=0.5: vMin ≈ -0.19 (19% reverse - subtle overshoot)
+  // exp=1:  vMin = 0 (full stop at waypoints)
   // exp=2:  vMin ≈ 0.29 (velocity dips to ~29%)
   // exp=4:  vMin ≈ 0.65 (velocity dips to ~65%)
-  // exp=6:  vMin ≈ 0.82 (velocity dips to ~82%)
   // exp=8:  vMin ≈ 0.91 (velocity dips to ~91% - gimbal-like)
-  // exp=10: vMin ≈ 0.96 (velocity dips to ~96% - very smooth)
   // exp=12: vMin ≈ 0.98 (velocity dips to ~98% - nearly constant)
   //
   const vMin = 1 - Math.pow(0.5, (exponent - 1) / 2);
   
-  // Clamp vMin to reasonable range (never fully 1.0 to preserve some easing)
-  const clampedVMin = Math.max(0, Math.min(0.99, vMin));
+  // Clamp vMin: allow negative down to -0.5 (overshoot), max 0.99 (preserve some easing)
+  const clampedVMin = Math.max(-0.5, Math.min(0.99, vMin));
   
   // Position from integrated sinusoidal velocity profile
   // p(t) = t - (1 - vMin) * sin(2πt) / (2π)
@@ -7294,6 +7588,25 @@ const fadeMs  = byId('fadeMs');
 		  recordBtn.disabled = false;
 		}
 		
+		// If first entry is a video, auto-set duration to match
+		if (deck[0].isVideo && deck[0].videoElement) {
+		  const videoEl = deck[0].videoElement;
+		  // Store reference for getCurrentVideoElement
+		  window.__currentVideoElement = videoEl;
+		  // Wait for duration to be available
+		  if (videoEl.duration && isFinite(videoEl.duration)) {
+		    if (typeof setDurationToVideoLength === 'function') {
+		      setDurationToVideoLength();
+		    }
+		  } else {
+		    videoEl.addEventListener('durationchange', () => {
+		      if (typeof setDurationToVideoLength === 'function') {
+		        setDurationToVideoLength();
+		      }
+		    }, { once: true });
+		  }
+		}
+		
 		console.log(`[deck] ======================================`);
 		console.log(`[deck] Initialization complete`);
 		console.log(`[deck] ======================================`);
@@ -7456,7 +7769,128 @@ function mirrorTextureSettings(dst, baseMap){
 	return window.THREE || globalThis.THREE || gt.THREE;
   }
 
+  // Helper to check if a file is a video
+  function isVideoFile(file) {
+    if (!file) return false;
+    const videoTypes = ['video/mp4', 'video/webm', 'video/quicktime', 'video/ogg', 'video/avi'];
+    const videoExtensions = ['.mp4', '.webm', '.mov', '.ogg', '.avi', '.m4v'];
+    
+    if (file.type && videoTypes.some(t => file.type.toLowerCase().startsWith(t.split('/')[0]))) {
+      return true;
+    }
+    if (file.name) {
+      const name = file.name.toLowerCase();
+      return videoExtensions.some(ext => name.endsWith(ext));
+    }
+    return false;
+  }
+  
+  // Global storage for video elements to keep them alive
+  gt.__videoElements = gt.__videoElements || [];
+  
+  // Helper to create a video texture entry
+  async function toVideoEntryWithSeq(file, seq) {
+    console.log(`[deck] === Loading VIDEO ${seq}: ${file.name} ===`);
+    
+    // Wait for THREE.js
+    let THREE;
+    try {
+      THREE = await waitForTHREE();
+      console.log(`[deck] THREE.js available for video`);
+    } catch(e) {
+      console.error(`[deck] CRITICAL: THREE.js not available for video:`, e);
+      return { texture: null, aspect: 1, width: 0, height: 0, seq, file, isVideo: true };
+    }
+    
+    return new Promise((resolve) => {
+      // Create video element
+      const video = document.createElement('video');
+      video.id = `deck-video-${seq}-${Date.now()}`;
+      video.playsInline = true;
+      video.muted = true; // Required for autoplay
+      video.loop = true;
+      video.crossOrigin = 'anonymous';
+      video.preload = 'auto';
+      video.style.display = 'none';
+      
+      // Store reference to prevent garbage collection
+      gt.__videoElements.push(video);
+      
+      const url = URL.createObjectURL(file);
+      
+      video.onloadedmetadata = () => {
+        console.log(`[deck] Video ${seq} metadata loaded: ${video.videoWidth}x${video.videoHeight}`);
+        
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        const aspect = width / height;
+        
+        // Create VideoTexture
+        const tex = new THREE.VideoTexture(video);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.flipY = false; // Match image orientation
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.generateMipmaps = false; // VideoTextures don't support mipmaps
+        tex.name = `deck-video-texture-${seq}-${file.name}-${Date.now()}`;
+        
+        // Store video reference in texture for later access
+        tex.userData = tex.userData || {};
+        tex.userData.sourceVideo = video;
+        tex.userData.sourceFile = file.name;
+        tex.userData.deckIndex = seq;
+        tex.userData.isVideo = true;
+        
+        console.log(`[deck] ✓ Created VIDEO texture #${seq}`);
+        console.log(`[deck]   Name: ${tex.name}`);
+        console.log(`[deck]   UUID: ${tex.uuid}`);
+        console.log(`[deck]   Dimensions: ${width}x${height}`);
+        
+        // Start playing
+        video.play().then(() => {
+          console.log(`[deck] Video ${seq} playing`);
+        }).catch(e => {
+          console.warn(`[deck] Video ${seq} autoplay blocked, will play on interaction:`, e);
+          // Add click handler to start video
+          const startVideo = () => {
+            video.play().catch(() => {});
+            document.removeEventListener('click', startVideo);
+            document.removeEventListener('touchstart', startVideo);
+          };
+          document.addEventListener('click', startVideo, { once: true });
+          document.addEventListener('touchstart', startVideo, { once: true });
+        });
+        
+        resolve({
+          texture: tex,
+          aspect,
+          width,
+          height,
+          seq,
+          file,
+          isVideo: true,
+          videoElement: video
+        });
+      };
+      
+      video.onerror = (e) => {
+        console.error(`[deck] Failed to load video ${seq}:`, e);
+        URL.revokeObjectURL(url);
+        resolve({ texture: null, aspect: 1, width: 0, height: 0, seq, file, isVideo: true });
+      };
+      
+      // Add to DOM (hidden) and set source
+      document.body.appendChild(video);
+      video.src = url;
+    });
+  }
+
   async function toEntryWithSeq(file, seq){
+    // Check if this is a video file
+    if (isVideoFile(file)) {
+      return toVideoEntryWithSeq(file, seq);
+    }
+    
 	console.log(`[deck] === Loading image ${seq}: ${file.name} ===`);
 	
 	// CRITICAL: Wait for THREE.js to be available
