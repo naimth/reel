@@ -560,8 +560,8 @@ body.fullscreen-mode canvas { width: 100vw !important; height: 100vh !important;
 
 		<div class="small" style="margin-top:-4px">Gimbal-style: smoothly flows through waypoints with gradual velocity changes.</div>
 		<label>Ease Exponent<span>
-			<input type="range" id="rampPower" min="0.1" max="24" step="0.1" value="24">
-			<input type="number" id="rampPowerN" min="0.1" max="24" step="0.1" value="24">
+			<input type="range" id="rampPower" min="0.1" max="24" step="0.1" value="1">
+			<input type="number" id="rampPowerN" min="0.1" max="24" step="0.1" value="1">
         </span>
       </label>
       <div class="small" style="margin-top:-4px">&lt;1 = overshoot/bounce, 1 = full stop, 1-2 = dramatic pause, 8+ = smooth flow-through.</div>
@@ -1468,7 +1468,7 @@ function makeDiscTexture(size=128){
 	bloomComposer.addPass(renderPass);
 
 	// Occlusion Composer for God Rays
-	occlusionRenderTarget = new THREE.WebGLRenderTarget(window.innerWidth / 2, window.innerHeight / 2);
+	occlusionRenderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
 	
 	
 	// Depth/occlusion mask to gate bloom & rays behind solid geometry
@@ -1980,7 +1980,7 @@ function restoreLightIntensities() {
 function setSceneLightsVisible(visible) {
   if (visible) {
     restoreLightIntensities();
-    
+
     // Restore flareStar layers based on background mode
     const flareStar = scene.getObjectByName('flareStar');
     if (flareStar && !window.__flareHiddenByBgMode) {
@@ -1998,7 +1998,7 @@ function setSceneLightsVisible(visible) {
     if (backLight) backLight.intensity = 0;
     if (hemi) hemi.intensity = 0;
     if (flareLight) flareLight.intensity = 0;
-    
+
     // Move flareStar to GOD_RAY_ONLY_LAYER so it only appears in god ray occlusion pass
     const flareStar = scene.getObjectByName('flareStar');
     if (flareStar) {
@@ -2019,7 +2019,7 @@ let __flareHiddenByBgMode = false;
 function setFlareVisible(visible) {
   __flareHiddenByBgMode = !visible;
   window.__flareHiddenByBgMode = !visible; // Update global for render loop
-  
+
   const flareStar = scene.getObjectByName('flareStar');
   if (flareStar) {
     if (visible) {
@@ -2035,10 +2035,10 @@ function setFlareVisible(visible) {
 	  // Hidden in main render; only keep it around IF god rays are actually enabled
 	  flareStar.layers.disableAll();
 	  flareStar.layers.enable(GOD_RAY_ONLY_LAYER);  // occlusion-only
-	
+
 	  const allowGodRays = (godRaysPass && godRaysPass.enabled);
 	  flareStar.visible = allowGodRays; // if rays are off (HDRI/solid), disc is fully gone
-	
+
 	  if (flareStar.material) {
 		flareStar.material.opacity = 1.0;
 		flareStar.material.needsUpdate = true;
@@ -2441,7 +2441,7 @@ console.log('[HDRI] Background mode system initialized');
 	  renderer.setSize(w,h,false);
 	  if (bloomComposer) bloomComposer.setSize(w, h);
 	  if (finalComposer) finalComposer.setSize(w, h);
-	  if (occlusionRenderTarget) occlusionRenderTarget.setSize(w / 2, h / 2);
+	  if (occlusionRenderTarget) occlusionRenderTarget.setSize(w, h);
 		if (depthMaskRT) depthMaskRT.setSize(w, h);
 if (flarePass) flarePass.uniforms.uResolution.value.set(w, h);
 	  camera.aspect = w/h; camera.updateProjectionMatrix();
@@ -3651,8 +3651,8 @@ canvas.addEventListener('wheel', (e)=>{
 	    if (flareStar && flareStar.material) {
 	      flareStar.material.opacity = __lightFadeAlpha;
 	      flareStar.material.needsUpdate = true;
-	      // Ensure it's visible when fading in
-	      if (__lightFadeAlpha > 0) {
+	      // Ensure it's visible when fading in — but only if not hidden by bg mode (e.g. Ocean & Sky)
+	      if (__lightFadeAlpha > 0 && !window.__flareHiddenByBgMode) {
 	        flareStar.visible = true;
 	        flareStar.layers.set(0);
 	        flareStar.layers.enable(BLOOM_LAYER);
@@ -3673,8 +3673,6 @@ canvas.addEventListener('wheel', (e)=>{
 		
 		const ease = Easings[easeSel.value] ?? Easings.easeInOut;
 		const easedTime = ease(linearTime);
-		
-		// Get the pose from unified system (includes velocity easing at checkpoints)
 		const finalPose = getUnifiedPathPose(easedTime);
 		
 		// Handle deck switching
@@ -3877,9 +3875,6 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	// --- Draw photo base + coat last so post-FX stay behind
 	try{
 	  renderer.clearDepth();
-	  // Render the full photo 'card' (frame + image + coat) on top
-	  if (backMesh)  { backMesh.visible = true;  renderer.render(backMesh,  camera); }
-	  if (sidesMesh) { sidesMesh.visible = true; renderer.render(sidesMesh, camera); }
 	  if (photoMesh) renderer.render(photoMesh, camera);
 	  if (photoCoat) renderer.render(photoCoat, camera);
 	}catch(e){ console.warn('final overlay render failed', e); }
@@ -3925,10 +3920,10 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	if (flareLight && !window.__flareHiddenByBgMode && !window.__sceneLightsHidden) {
 		flareLight.intensity = (showSun && showSun.checked) ? 2.5 : 0;
 	}
-	// Restore flareStar opacity based on showSun setting
+	// Restore flareStar opacity based on showSun setting and background mode
 	const flareStar = scene.getObjectByName('flareStar');
 	if (flareStar && flareStar.material) {
-	  if (showSun && showSun.checked) {
+	  if (showSun && showSun.checked && !window.__flareHiddenByBgMode) {
 	    flareStar.visible = true;
 	    flareStar.material.opacity = 1.0;
 	    flareStar.material.needsUpdate = true;
@@ -3941,14 +3936,47 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	  }
 	}
 
-	// After any kind of playback, re-attach the camera to the pivot
-	// to restore normal manual control functionality.
-	pivot.attach(camera);
+	// For custom paths: keep camera at the final path pose instead of
+	// snapping back to the pre-playback position (which is jarring).
+	//
+	// IMPORTANT: We avoid pivot.attach(camera) here because attach() does a
+	// world→local transform that includes the pivot's own quaternion, which
+	// may be non-identity from prior OrbitControls/plane alignment — this
+	// mangles the camera's orientation causing an angle/focus jump.
+	// Instead we directly re-parent and set position/rotation manually,
+	// matching the same pattern as __restorePrePlaybackState().
+	if (__prePlaybackState && pathSel.value === 'customPath' && cinematicPathCheckpoints?.length >= 2) {
+		const lastCp = cinematicPathCheckpoints[cinematicPathCheckpoints.length - 1];
 
-	// For custom paths: restore camera to pre-playback position
-	// This returns user to where they were before pressing Preview
-	if (__prePlaybackState) {
-		__restorePrePlaybackState();
+		// 1. Reset pivot to identity rotation and move to final focus
+		focus.copy(lastCp.focus);
+		pivot.position.copy(focus);
+		pivot.rotation.set(0, 0, 0);
+		pivot.updateMatrixWorld(true);
+
+		// 2. Re-parent camera to pivot WITHOUT transform conversion
+		//    (remove from scene, add as child of pivot)
+		if (camera.parent) camera.parent.remove(camera);
+		pivot.add(camera);
+
+		// 3. Set camera in pivot-local space: offset from origin, looking at origin
+		camera.position.copy(lastCp.offset);
+		camera.fov = lastCp.fov;
+		camera.updateProjectionMatrix();
+		camera.up.set(0, 1, 0);
+		camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+		// 4. Sync deck to final checkpoint
+		if (typeof globalThis.__deck_crossfadeTo === 'function' && lastCp.deckIdx != null && lastCp.deckIdx !== globalThis.deckIndex) {
+			globalThis.__deck_crossfadeTo(lastCp.deckIdx, 0);
+		}
+
+		__prePlaybackState = null;
+	} else {
+		pivot.attach(camera);
+		if (__prePlaybackState) {
+			__restorePrePlaybackState();
+		}
 	}
 
 	if(controls){
@@ -3956,6 +3984,7 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 		controls.enablePan=true;
 		const t=safeTarget();
 		if(t) t.copy(focus);
+		controls.update();
 	}
 	}
 
@@ -4095,6 +4124,16 @@ if (fadeUniform && !playing && !globalThis.__crossfadeActive){
 	// Save current camera state BEFORE detaching from pivot
 	// This allows us to restore position after preview ends
 	__savePrePlaybackState();
+
+	// Reset pivot/focus to origin BEFORE detaching camera from pivot.
+	// scene.attach(camera) converts the camera's pivot-local position to world
+	// space using the pivot's current transform — if focus (and therefore pivot)
+	// is non-zero, that offset gets baked into the world position incorrectly.
+	// Zeroing the pivot first ensures a clean detach.
+	focus.set(0, 0, 0);
+	pivot.position.set(0, 0, 0);
+	pivot.rotation.set(0, 0, 0);
+	pivot.updateMatrixWorld(true);
 
 	// De-parent from pivot to allow setting world positions directly during playback.
 	// This makes playback independent of the camera's state before clicking Preview.
@@ -4663,9 +4702,10 @@ function __cinematicSpeedRamp(u) {
   // Use a combination of exponential and power curves for maximum drama
   // The key insight: we want VERY flat slopes at the endpoints and VERY steep in middle
   
-  // Attempt 1: Super-high power (15) gives ~32x speed differential
-  // But blend with exponential for smoother acceleration feel
-  const power = 15;
+  // Power curve for the hold-BLAST-hold shape.
+  // 15 was too extreme (barely moved in the first 25% of time).
+  // 8 still gives a clear dramatic hold but ramps up noticeably sooner.
+  const power = 8;
   
   let powerResult;
   if (u < 0.5) {
@@ -5159,17 +5199,17 @@ function getUnifiedPathPose(videoProgress) {
     // SPEEDRAMP MODE: Interpolate directly between zone endpoints
     cp0 = cps[speedRampZone.startIdx];
     cp1 = cps[speedRampZone.endIdx];
-    
+
     // Use cinematic speedramp for dramatic slow-BLAST-slow effect
     t = __cinematicSpeedRamp(zoneLocalProgress);
-    
+
   } else {
     // NORMAL MODE: Use weighted time allocation (movement segments get more time)
     const { segmentIdx, localProgress } = __getWeightedSegmentProgress(videoProgress, cps);
-    
+
     cp0 = cps[segmentIdx];
     cp1 = cps[Math.min(segmentIdx + 1, cps.length - 1)];
-    
+
     let adjustedProgress = localProgress;
     
     // Handle pause checkpoints - quick transition, mostly for deck change
@@ -5198,9 +5238,17 @@ function getUnifiedPathPose(videoProgress) {
     
     // ---- Apply velocity-preserving easing ----
     // This ensures camera passes through exact checkpoint positions
-    // but with velocity smoothly approaching zero at each checkpoint (sine wave pattern)
+    // but with velocity smoothly approaching zero at each checkpoint (sine wave pattern).
+    // Special case: if cp0 is a speedramp END, the speedramp already decelerated into this
+    // point — skip the entry dip and only apply the exit deceleration so the camera flows
+    // smoothly out of the speedramp without a double-dip halt.
     if (document.getElementById('rampCheckpoints')?.checked) {
-      adjustedProgress = __velocityZeroEasing(adjustedProgress);
+      const isAfterSpeedRamp = cp0.speedRamp === 'end';
+      if (isAfterSpeedRamp) {
+        adjustedProgress = __velocityZeroEasingExitOnly(adjustedProgress);
+      } else {
+        adjustedProgress = __velocityZeroEasing(adjustedProgress);
+      }
     }
     
     t = adjustedProgress;
@@ -5221,53 +5269,82 @@ function getUnifiedPathPose(videoProgress) {
   return { offset, focus, fov, deckIdx, deckFadeMs };
 }
 
-// GIMBAL-STYLE velocity easing using sinusoidal velocity profile
-// 
-// Instead of power-based position easing (which creates FLAT regions where
-// the camera "sits" at waypoints), this uses a smooth velocity profile:
-//   v(t) = vMin + (1 - vMin) * sin²(π * t)
-// 
-// Integrating gives position:
-//   p(t) = t - (1 - vMin) * sin(2πt) / (2π)
-// 
+// GIMBAL-STYLE velocity easing — slows at WAYPOINTS, full speed mid-segment
+//
+// Velocity profile that dips to vMin at segment boundaries (the waypoints)
+// and peaks mid-segment. Uses sin(πt) (NOT sin²) so the velocity touches
+// vMin and IMMEDIATELY ramps back up — no lingering at zero.
+//
+//   v(t) = vMin + (1 - vMin) * sin(π * t)
+//
+// Compare the two approaches at t=0:
+//   sin²(πt) → derivative = 0 at boundaries → U-shape, LINGERS at zero
+//   sin(πt)  → derivative = π at boundaries → V-shape, INSTANT turnaround
+//
+// Integrating:
+//   raw(t) = vMin*t + (1 - vMin) * [1 - cos(πt)] / π
+//   raw(1) = vMin + 2*(1 - vMin)/π
+//   p(t)   = raw(t) / raw(1)    [normalize so p(1) = 1]
+//
 // Key properties:
-// - Velocity is ALWAYS smooth (sinusoidal = continuous derivatives)
-// - Velocity never sits at zero - just briefly dips to vMin
-// - Higher exponent = higher vMin = more gradual/gimbal-like motion
-// - Camera flows THROUGH waypoints instead of stopping at them
+// - Velocity touches vMin at every waypoint but never dwells there
+// - Immediate ramp-up after hitting vMin (non-zero acceleration at boundaries)
+// - Full speed in the middle of each segment
+// - Camera decelerates into waypoints and accelerates out — crisp gimbal feel
+// - Higher exponent = higher vMin = subtler slowdown at waypoints
 //
 function __velocityZeroEasing(t) {
-  const exponent = parseFloat(document.getElementById('rampPower')?.value || 12);
-  
-  // Map exponent to minimum velocity factor using exponential decay
-  // This asymptotically approaches 1.0 as exponent increases:
+  const exponent = parseFloat(document.getElementById('rampPower')?.value || 4);
+
+  // Map exponent to minimum velocity factor at waypoints
   //   vMin = 1 - 0.5^((exp-1)/2)
   //
-  // exp<1:  vMin < 0 (NEGATIVE = overshoot/bounce at waypoints!)
-  // exp=0.1: vMin ≈ -0.37 (37% reverse velocity - bouncy!)
-  // exp=0.5: vMin ≈ -0.19 (19% reverse - subtle overshoot)
-  // exp=1:  vMin = 0 (full stop at waypoints)
-  // exp=2:  vMin ≈ 0.29 (velocity dips to ~29%)
-  // exp=4:  vMin ≈ 0.65 (velocity dips to ~65%)
-  // exp=8:  vMin ≈ 0.91 (velocity dips to ~91% - gimbal-like)
-  // exp=12: vMin ≈ 0.98 (velocity dips to ~98% - nearly constant)
+  // exp=0.1: vMin ≈ -0.37 (overshoot/bounce at waypoints)
+  // exp=1:   vMin = 0    (full stop at waypoints — crisp V-shaped dip)
+  // exp=2:   vMin ≈ 0.29 (strong deceleration)
+  // exp=4:   vMin ≈ 0.65 (moderate gimbal-like)
+  // exp=8:   vMin ≈ 0.91 (subtle gimbal)
+  // exp=12:  vMin ≈ 0.98 (nearly constant — very subtle)
   //
   const vMin = 1 - Math.pow(0.5, (exponent - 1) / 2);
-  
-  // Clamp vMin: allow negative down to -0.5 (overshoot), max 0.99 (preserve some easing)
-  const clampedVMin = Math.max(-0.5, Math.min(0.99, vMin));
-  
-  // Position from integrated sinusoidal velocity profile
-  // p(t) = t - (1 - vMin) * sin(2πt) / (2π)
+  // Floor vMin so velocity never reaches exactly zero — camera always keeps a hint of motion
+  // at waypoints (about 5% of peak speed at the default exp=1 setting)
+  const clampedVMin = Math.max(0.05, Math.min(0.99, vMin));
+
+  // Integrated sin(πt) velocity profile:
+  //   raw(t) = vMin*t + (1 - vMin) * [1 - cos(πt)] / π
+  //   raw(1) = vMin + 2*(1 - vMin)/π
   //
-  // This creates a smooth S-curve where:
-  // - Velocity gradually decreases approaching waypoint
-  // - Briefly touches vMin (never zero for exp > 1)
-  // - Gradually increases leaving waypoint
-  // - No "flat" regions, no sudden velocity changes
-  //
-  const sinComponent = Math.sin(2 * Math.PI * t) / (2 * Math.PI);
-  return t - (1 - clampedVMin) * sinComponent;
+  const oneMinusV = 1 - clampedVMin;
+  const raw = clampedVMin * t + oneMinusV * (1 - Math.cos(Math.PI * t)) / Math.PI;
+  const rawAt1 = clampedVMin + 2 * oneMinusV / Math.PI;
+  return raw / rawAt1;
+}
+
+// HALF-ENTRY velocity easing — used after a speedramp ends.
+// The speedramp already decelerated to near-zero at its endpoint, so the
+// following segment should START at full speed (no entry dip) and only
+// decelerate at its own exit. We achieve this by mirroring the second half
+// of the sine profile: velocity goes from full speed down to vMin.
+//
+//   v(t) = vMin + (1 - vMin) * sin(π/2 + πt/2)   [= cos(πt/2) rescaled]
+//        = vMin + (1 - vMin) * cos(πt/2)
+//
+// Integrated:
+//   raw(t)  = vMin*t + (1 - vMin) * (2/π) * sin(πt/2)
+//   raw(1)  = vMin + 2*(1 - vMin)/π   [same total as full profile]
+//
+function __velocityZeroEasingExitOnly(t) {
+  const exponent = parseFloat(document.getElementById('rampPower')?.value || 4);
+  const vMin = 1 - Math.pow(0.5, (exponent - 1) / 2);
+  const clampedVMin = Math.max(0.05, Math.min(0.99, vMin));
+
+  const oneMinusV = 1 - clampedVMin;
+  // Integrate cos(πt/2): antiderivative = (2/π)*sin(πt/2)
+  const raw = clampedVMin * t + oneMinusV * (2 / Math.PI) * Math.sin(Math.PI * t / 2);
+  // raw(1) = vMin + 2*(1-vMin)/π  — same denominator as full profile for consistent total travel
+  const rawAt1 = clampedVMin + 2 * oneMinusV / Math.PI;
+  return raw / rawAt1;
 }
 
 // Apply distance-based speed scaling within a single segment
@@ -9469,20 +9546,23 @@ console.log('[DIMS] Script loading...');
       console.log('[mobile] Cards collapsed on mobile');
     }, 500);
     
-    // Hide Screen Record Mode button if direct recording is supported
+    // Hide Screen Record Mode button if direct recording is supported —
+    // BUT keep it on iOS, where MediaRecorder exists but can't reliably encode
+    // canvas streams (produces still frames) and <a download> doesn't save to Camera Roll.
+    // On iOS, Screen Record Mode (via iOS Control Center) is the only reliable option.
     const hasMediaRecorder = 'MediaRecorder' in window && typeof window.MediaRecorder === 'function';
-    if (hasMediaRecorder) {
-      console.log('[mobile] MediaRecorder supported - hiding Screen Record Mode button');
+    if (hasMediaRecorder && !isIOS) {
+      console.log('[mobile] MediaRecorder supported (non-iOS) - hiding Screen Record Mode button');
       setTimeout(() => {
         const btn = document.getElementById('mobileRecordBtn');
         if (btn) {
           btn.style.display = 'none !important';
-          btn.remove(); // Just remove it entirely
+          btn.remove();
           console.log('[mobile] Screen Record Mode button removed (direct recording available)');
         }
       }, 2000);
     } else {
-      console.log('[mobile] MediaRecorder NOT supported - Screen Record Mode button visible');
+      console.log('[mobile] Keeping Screen Record Mode button visible' + (isIOS ? ' (iOS - use Control Center screen recording)' : ' (no MediaRecorder)'));
     }
     
     // Reduce effects for performance on mobile
@@ -9709,6 +9789,5 @@ console.log('[DIMS] Script loading...');
     lastX = e.clientX; lastY = e.clientY;
   }, { passive: false, capture: true });
 })();</script>
-
 
 
